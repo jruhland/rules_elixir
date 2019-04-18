@@ -1,5 +1,3 @@
-#load("@bazel_skylib//:lib.bzl", "shell")
-
 ElixirLibrary = provider(
     # doc = "...",
     # fields = {
@@ -11,9 +9,7 @@ def _elixir_loadpath_option(ebin_dir):
     return "-pa {}".format(ebin_dir)
 
 def elixir_compile(ctx, srcs, out, deps = []):
-    #print("elixir_compile deps = ", deps)
     transitive_deps = depset(transitive = [d.loadpath for d in deps])
-    print("elixir_compile transitive deps = ", transitive_deps)
     args = ctx.actions.args()
     args.add_all(transitive_deps, expand_directories=False, before_each = "-pa")
     args.add("-o", out.path)
@@ -21,7 +17,7 @@ def elixir_compile(ctx, srcs, out, deps = []):
     ctx.actions.run_shell(
         outputs = [out],
         inputs = depset(direct = srcs, transitive = [transitive_deps]),
-        command = "elixirc $@",
+        command = "exec elixirc $@",
         arguments = [args],
         env = {"HOME": ".",
                "LANG": "en_US.UTF-8",
@@ -36,17 +32,22 @@ def _elixir_library_impl(ctx):
         deps = [dep[ElixirLibrary] for dep in ctx.attr.deps],
         out = ebin_dir,
     )
+    transitive_paths = [dep[ElixirLibrary].loadpath for dep in ctx.attr.deps]
     return [
-        DefaultInfo(files = depset([ebin_dir])),
+        DefaultInfo(
+            files = depset([ebin_dir]),
+            default_runfiles = ctx.runfiles(files = [ebin_dir],
+                                            transitive_files = depset(transitive = transitive_paths)),
+        ),
         ElixirLibrary(
             loadpath = depset(
                 direct = [ebin_dir],
-                transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.deps]
-            )
+                transitive = transitive_paths
+            ),
         )
     ]
 
-
+    
 elixir_library = rule(
     _elixir_library_impl,
     attrs = {
@@ -56,5 +57,37 @@ elixir_library = rule(
         ),
         "deps": attr.label_list(),
     },
-    doc = "Builds",
+    doc = "Builds a folder with .beam files for each module in the source file(s)",
+)
+
+def _elixir_script_impl(ctx):
+    lib_runfiles = ctx.runfiles(collect_default = True)
+    src_runfiles = ctx.runfiles(files = ctx.files.srcs)
+    ctx.actions.write(
+        output = ctx.outputs.executable,
+        content = "\n".join([
+            "#!/bin/sh",
+            "exec elixir {} {}".format(
+                " ".join(["-pa {}".format(d.short_path) for d in lib_runfiles.files]),
+                " ".join([file.path for file in src_runfiles.files])),
+            "\n",
+        ]),
+        is_executable = True,
+    )
+
+    return [
+        DefaultInfo(runfiles = src_runfiles.merge(lib_runfiles))
+    ]
+
+elixir_script = rule(
+    _elixir_script_impl,
+    attrs = {
+        "srcs": attr.label_list(
+            allow_files = [".ex"],
+            doc = "Source files",
+        ),
+        "deps": attr.label_list(),
+    },
+    executable = True,
+    doc = "Elixir script, intended for use with `bazel run` -- does not work outside bazel context"
 )

@@ -1,1 +1,1 @@
-load("//impl:rules.bzl", "elixir_library")
+load("//impl:rules.bzl", "elixir_library", "elixir_script")

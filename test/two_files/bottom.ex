@@ -1,7 +1,7 @@
 defmodule Bottom do
-  defmacro some_maco(x) do
+  defmacro some_macro(x) do
     quote do
-      {:macro_returned, unquote(x)}
+      {:macro_returned, unquote(Macro.escape(x))}
     end
   end
 end

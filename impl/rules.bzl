@@ -5,9 +5,6 @@ ElixirLibrary = provider(
     # }
 )
 
-def _elixir_loadpath_option(ebin_dir):
-    return "-pa {}".format(ebin_dir)
-
 def elixir_compile(ctx, srcs, out, deps = []):
     transitive_deps = depset(transitive = [d.loadpath for d in deps])
     args = ctx.actions.args()
@@ -67,7 +64,7 @@ def _elixir_script_impl(ctx):
         output = ctx.outputs.executable,
         content = "\n".join([
             "#!/bin/sh",
-            "exec elixir {} {}".format(
+            "exec elixir {} {} $@".format(
                 " ".join(["-pa {}".format(d.short_path) for d in lib_runfiles.files]),
                 " ".join([file.path for file in src_runfiles.files])),
             "\n",

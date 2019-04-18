@@ -6,5 +6,7 @@ defmodule Top do
   end
 end
 
+IO.puts("version = #{inspect(System.version)}")
 IO.puts("top.func = #{inspect(Top.func())}")
 Other.other_func("hi")
+IO.puts("argv = #{inspect(System.argv)}")

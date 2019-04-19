@@ -64,7 +64,7 @@ def _elixir_script_impl(ctx):
         output = ctx.outputs.executable,
         content = "\n".join([
             "#!/bin/sh",
-            "exec elixir {} {} $@".format(
+            "exec /usr/bin/elixir {} {} $@".format(
                 " ".join(["-pa {}".format(d.short_path) for d in lib_runfiles.files]),
                 " ".join([file.path for file in src_runfiles.files])),
             "\n",
@@ -88,3 +88,41 @@ elixir_script = rule(
     executable = True,
     doc = "Elixir script, intended for use with `bazel run` -- does not work outside bazel context"
 )
+
+
+def _mix_project_impl(ctx):
+    print("elixirc_files = ,", ctx.files.elixirc_files)
+    
+    f = ctx.actions.declare_file("whatever")
+    ctx.actions.write(
+        output = f,
+        content = "whatever"
+    )
+    return [
+        DefaultInfo(files = depset([f]))
+    ]
+
+mix_project_rule = rule(
+    _mix_project_impl,
+    attrs = {
+        "mixfile": attr.label(
+            allow_single_file = ["mix.exs"],
+        ),
+        "elixirc_files": attr.label_list(
+            allow_files = True
+        ),
+    }
+)
+
+def mix_project(name = None,
+                elixirc_paths = [],
+                **kwargs):
+    mix_project_rule(
+        name = name,
+        mixfile = "mix.exs",
+        elixirc_files = native.glob([d + "/**" for d in elixirc_paths]),
+        **kwargs
+    )
+
+
+

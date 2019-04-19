@@ -1,3 +1,4 @@
+# 100% cargo culted
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
 def elixir_rules_dependencies():

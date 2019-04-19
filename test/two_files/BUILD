@@ -1,4 +1,4 @@
-load("//impl:def.bzl", "elixir_library", "elixir_script")
+load("//impl:defs.bzl", "elixir_library", "elixir_script")
 
 elixir_library(
     name = "bottom",

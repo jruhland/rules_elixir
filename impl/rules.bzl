@@ -5,6 +5,11 @@ ElixirLibrary = provider(
     # }
 )
 
+ELIXIR_TOOL_PATH = "/home/russell/src/cloned/elixir/bin/"
+
+def elixir_tool(name):
+    return ELIXIR_TOOL_PATH + name
+
 def elixir_compile(ctx, srcs, out, deps = []):
     transitive_deps = depset(transitive = [d.loadpath for d in deps])
     args = ctx.actions.args()
@@ -14,11 +19,12 @@ def elixir_compile(ctx, srcs, out, deps = []):
     ctx.actions.run_shell(
         outputs = [out],
         inputs = depset(direct = srcs, transitive = [transitive_deps]),
-        command = "exec elixirc $@",
+        command = "exec {} $@".format(elixir_tool("elixirc")),
         arguments = [args],
-        env = {"HOME": ".",
-               "LANG": "en_US.UTF-8",
-               "PATH": "/usr/bin"}
+        env = {
+            "HOME": ".",  # or Erlang refuses to start
+            "LANG": "en_US.UTF-8", # or Elixir complains
+        }
     )
 
 def _elixir_library_impl(ctx):
@@ -33,8 +39,9 @@ def _elixir_library_impl(ctx):
     return [
         DefaultInfo(
             files = depset([ebin_dir]),
-            default_runfiles = ctx.runfiles(files = [ebin_dir],
-                                            transitive_files = depset(transitive = transitive_paths)),
+            default_runfiles = ctx.runfiles(
+                files = [ebin_dir],
+                transitive_files = depset(transitive = transitive_paths)),
         ),
         ElixirLibrary(
             loadpath = depset(
@@ -64,9 +71,10 @@ def _elixir_script_impl(ctx):
         output = ctx.outputs.executable,
         content = "\n".join([
             "#!/bin/sh",
-            "exec /usr/bin/elixir {} {} $@".format(
-                " ".join(["-pa {}".format(d.short_path) for d in lib_runfiles.files]),
-                " ".join([file.path for file in src_runfiles.files])),
+            "exec {elixir} {loadpath} {srcs} $@".format(
+                elixir = elixir_tool("elixir"),
+                loadpath = " ".join(["-pa {}".format(d.short_path) for d in lib_runfiles.files]),
+                srcs = " ".join([file.path for file in src_runfiles.files])),
             "\n",
         ]),
         is_executable = True,
@@ -80,7 +88,7 @@ elixir_script = rule(
     _elixir_script_impl,
     attrs = {
         "srcs": attr.label_list(
-            allow_files = [".ex"],
+            allow_files = [".ex", ".exs"],
             doc = "Source files",
         ),
         "deps": attr.label_list(),
@@ -109,8 +117,11 @@ mix_project_rule = rule(
             allow_single_file = ["mix.exs"],
         ),
         "elixirc_files": attr.label_list(
-            allow_files = True
+            allow_files = True,
         ),
+        "build_path": attr.label(
+            allow_single_file = True,
+        )
     }
 )
 
@@ -123,6 +134,10 @@ def mix_project(name = None,
         elixirc_files = native.glob([d + "/**" for d in elixirc_paths]),
         **kwargs
     )
+
+
+# Third-party dependencies don't change very much, and might be built in weird ways.
+# So for simplicity's sake, we are fine just building them with mix all at once
 
 
 

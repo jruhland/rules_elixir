@@ -6,7 +6,7 @@ defmodule Mix.Tasks.Autodeps do
   Generate BUILD files for the mix project in the current directory
   """
   @impl true
-  def run(args) do
+  def run(_args) do
     Mix.Project.get!()
     :ets.new(:found_deps, [:set, :public, :named_table])
     {:ok, mixfile} = Common.active_mixfile()

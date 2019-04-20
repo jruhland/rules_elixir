@@ -8,7 +8,7 @@ defmodule Mix.Tasks.Autodeps.Recursive do
   """
 
   @impl true
-  def run(args) do
+  def run(_args) do
     Mix.Project.get!()
 
     Mix.Task.run("loadpaths")

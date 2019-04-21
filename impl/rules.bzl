@@ -5,27 +5,21 @@ ElixirLibrary = provider(
     # }
 )
 
-ELIXIR_TOOL_PATH = "/home/russell/src/cloned/elixir/bin/"
-
-def elixir_tool(name):
-    return ELIXIR_TOOL_PATH + name
-
 def elixir_compile(ctx, srcs, out, deps = []):
     transitive_deps = depset(transitive = [d.loadpath for d in deps])
     args = ctx.actions.args()
+    args.add("elixirc")
     args.add_all(transitive_deps, expand_directories=False, before_each = "-pa")
     args.add("-o", out.path)
     args.add_all(srcs)
-    ctx.actions.run_shell(
+    ctx.actions.run(
+        executable = ctx.executable._elixir_tool,
         outputs = [out],
         inputs = depset(direct = srcs, transitive = [transitive_deps]),
-        command = "exec {} $@".format(elixir_tool("elixirc")),
         arguments = [args],
-        env = {
-            "HOME": ".",  # or Erlang refuses to start
-            "LANG": "en_US.UTF-8", # or Elixir complains
-        }
+        use_default_shell_env = True,
     )
+
 
 def _elixir_library_impl(ctx):
     ebin_dir = ctx.actions.declare_directory(ctx.label.name + "_ebin")
@@ -51,53 +45,75 @@ def _elixir_library_impl(ctx):
         )
     ]
 
-    
+_elixir_common_attrs = {
+    "_elixir_tool": attr.label(
+        executable = True,
+        cfg = "host",
+        default = Label("@elixir//:elixir_tool"),
+    ),
+}
+
+_elixir_library_attrs = {
+    "srcs": attr.label_list(
+        allow_files = [".ex"],
+        doc = "Source files",
+    ),
+    "deps": attr.label_list(),
+}
+
 elixir_library = rule(
     _elixir_library_impl,
-    attrs = {
-        "srcs": attr.label_list(
-            allow_files = [".ex"],
-            doc = "Source files",
-        ),
-        "deps": attr.label_list(),
-    },
+    attrs = dict(_elixir_common_attrs.items() + _elixir_library_attrs.items()),
     doc = "Builds a folder with .beam files for each module in the source file(s)",
 )
 
 def _elixir_script_impl(ctx):
-    lib_runfiles = ctx.runfiles(collect_default = True)
+    lib_runfiles = ctx.runfiles(collect_default = True, collect_data = True)
     src_runfiles = ctx.runfiles(files = ctx.files.srcs)
-    ctx.actions.write(
+
+    ctx.actions.expand_template(
+        template = ctx.file._script_template,
         output = ctx.outputs.executable,
-        content = "\n".join([
-            "#!/bin/sh",
-            "exec {elixir} {loadpath} {srcs} $@".format(
-                elixir = elixir_tool("elixir"),
-                loadpath = " ".join(["-pa {}".format(d.short_path) for d in lib_runfiles.files]),
-                srcs = " ".join([file.path for file in src_runfiles.files])),
-            "\n",
-        ]),
+        substitutions = {
+            "{elixir_tool}": ctx.executable._elixir_tool.path,
+            "{loadpath}":  " ".join(["-pa $(rlocation {}/{})".format(ctx.workspace_name, d.short_path) for d in lib_runfiles.files]),
+            "{srcs}": " ".join(["$(rlocation {}/{})".format(ctx.workspace_name, d.short_path) for d in src_runfiles.files]),
+        },
         is_executable = True,
     )
-
     return [
         DefaultInfo(runfiles = src_runfiles.merge(lib_runfiles))
     ]
 
-elixir_script = rule(
+_elixir_script_attrs = {
+    "srcs": attr.label_list(
+        allow_files = [".ex", ".exs"],
+        doc = "Source files",
+    ),
+    "deps": attr.label_list(),
+    "_script_template": attr.label(
+        allow_single_file = True,
+        default = Label("//impl:elixir_script.template"),
+    ),
+}
+
+elixir_script_runner = rule(
     _elixir_script_impl,
-    attrs = {
-        "srcs": attr.label_list(
-            allow_files = [".ex", ".exs"],
-            doc = "Source files",
-        ),
-        "deps": attr.label_list(),
-    },
+    attrs = dict(_elixir_common_attrs.items() + _elixir_script_attrs.items()),
     executable = True,
     doc = "Elixir script, intended for use with `bazel run` -- does not work outside bazel context"
 )
 
-
+def elixir_script(name = None, **kwargs):
+    runner = name + "_runner"
+    elixir_script_runner(name = runner, **kwargs)
+    native.sh_binary(
+        name = name,
+        deps = ["@bazel_tools//tools/bash/runfiles", "@elixir//:elixir_tool_lib"],
+        srcs = [runner],
+        visibility = ["//visibility:public"],
+    )
+        
 def _mix_project_impl(ctx):
     print("elixirc_files = ,", ctx.files.elixirc_files)
     

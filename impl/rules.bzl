@@ -5,42 +5,42 @@ ElixirLibrary = provider(
     # }
 )
 
-def elixir_compile(ctx, srcs, out, transitive_deps = []):
+def elixir_compile(ctx, srcs, out, loadpath = []):
     args = ctx.actions.args()
     args.add("elixirc")
-    args.add_all(transitive_deps, expand_directories=False, before_each = "-pa")
+    args.add_all(loadpath, expand_directories=False, before_each = "-pa")
     args.add("-o", out.path)
     args.add_all(srcs)
     ctx.actions.run(
         executable = ctx.executable._elixir_tool,
         outputs = [out],
-        inputs = depset(direct = srcs, transitive = [transitive_deps]),
+        inputs = depset(direct = srcs, transitive = [loadpath]),
         arguments = [args],
         use_default_shell_env = True,
     )
 
 def _elixir_library_impl(ctx):
     ebin_dir = ctx.actions.declare_directory(ctx.label.name + "_ebin")
-    transitive_deps = depset(transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.deps])
+    compile_loadpath = depset(transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.compile_deps])
     elixir_compile(
         ctx,
         srcs = ctx.files.srcs,
-        transitive_deps = transitive_deps,
+        loadpath = compile_loadpath,
         out = ebin_dir,
     )
-
+    runtime_loadpath = depset(transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.runtime_deps])
     return [
         DefaultInfo(
             files = depset([ebin_dir]),
             default_runfiles = ctx.runfiles(
                 files = [ebin_dir],
-                transitive_files = transitive_deps,
+                transitive_files = runtime_loadpath,
             )
         ),
         ElixirLibrary(
             loadpath = depset(
                 direct = [ebin_dir],
-                transitive = [transitive_deps]
+                transitive = [runtime_loadpath]
             ),
         )
     ]
@@ -59,13 +59,18 @@ _elixir_library_attrs = {
         doc = "Source files",
     ),
     "deps": attr.label_list(),
+    "compile_deps": attr.label_list(),
+    "runtime_deps": attr.label_list(),
 }
 
 elixir_library = rule(
     _elixir_library_impl,
     attrs = dict(_elixir_common_attrs.items() + _elixir_library_attrs.items()),
-    doc = "Builds a folder with .beam files for each module in the source file(s)",
+    doc = "Builds a directory containing .beam files for all modules in the source file(s)",
 )
+
+def _rlocation(ctx, runfile):
+    return "$(rlocation {}/{})".format(ctx.workspace_name, runfile.short_path)
 
 def _elixir_script_impl(ctx):
     lib_runfiles = ctx.runfiles(collect_default = True, collect_data = True)
@@ -76,8 +81,8 @@ def _elixir_script_impl(ctx):
         output = ctx.outputs.executable,
         substitutions = {
             "{elixir_tool}": ctx.executable._elixir_tool.path,
-            "{loadpath}":  " ".join(["-pa $(rlocation {}/{})".format(ctx.workspace_name, d.short_path) for d in lib_runfiles.files]),
-            "{srcs}": " ".join(["$(rlocation {}/{})".format(ctx.workspace_name, d.short_path) for d in src_runfiles.files]),
+            "{loadpath}":    " ".join(["-pa {}".format(_rlocation(ctx, f)) for f in lib_runfiles.files]),
+            "{srcs}":        " ".join([_rlocation(ctx, f) for f in src_runfiles.files]),
         },
         is_executable = True,
     )

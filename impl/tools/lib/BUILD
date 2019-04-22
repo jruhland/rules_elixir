@@ -5,3 +5,9 @@ elixir_library(
     srcs = ["common.ex"],
     visibility = ["//impl/tools:__subpackages__"],
 )
+
+elixir_library(
+    name = "bazel",
+    srcs = ["bazel.ex"],
+    visibility = ["//impl/tools:__subpackages__"],
+)

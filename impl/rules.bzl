@@ -5,8 +5,7 @@ ElixirLibrary = provider(
     # }
 )
 
-def elixir_compile(ctx, srcs, out, deps = []):
-    transitive_deps = depset(transitive = [d.loadpath for d in deps])
+def elixir_compile(ctx, srcs, out, transitive_deps = []):
     args = ctx.actions.args()
     args.add("elixirc")
     args.add_all(transitive_deps, expand_directories=False, before_each = "-pa")
@@ -20,27 +19,28 @@ def elixir_compile(ctx, srcs, out, deps = []):
         use_default_shell_env = True,
     )
 
-
 def _elixir_library_impl(ctx):
     ebin_dir = ctx.actions.declare_directory(ctx.label.name + "_ebin")
+    transitive_deps = depset(transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.deps])
     elixir_compile(
         ctx,
         srcs = ctx.files.srcs,
-        deps = [dep[ElixirLibrary] for dep in ctx.attr.deps],
+        transitive_deps = transitive_deps,
         out = ebin_dir,
     )
-    transitive_paths = [dep[ElixirLibrary].loadpath for dep in ctx.attr.deps]
+
     return [
         DefaultInfo(
             files = depset([ebin_dir]),
             default_runfiles = ctx.runfiles(
                 files = [ebin_dir],
-                transitive_files = depset(transitive = transitive_paths)),
+                transitive_files = transitive_deps,
+            )
         ),
         ElixirLibrary(
             loadpath = depset(
                 direct = [ebin_dir],
-                transitive = transitive_paths
+                transitive = [transitive_deps]
             ),
         )
     ]

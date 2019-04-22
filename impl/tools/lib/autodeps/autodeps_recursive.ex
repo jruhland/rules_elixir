@@ -20,12 +20,11 @@ defmodule Mix.Tasks.Autodeps.Recursive do
       {:ok, _} = Application.ensure_all_started(:phoenix)
     end
 
-    srcs = project[:elixirc_paths]
-    all_paths = MapSet.new(Mix.Utils.extract_files(srcs, [:ex]))
+    all_paths =
+      project[:elixirc_paths]
+      |> Mix.Utils.extract_files([:ex])
+      |> MapSet.new
 
-    {:ok, mixfile} = RulesElixir.Tools.Common.active_mixfile()
-    Process.put(:project_root, Path.dirname(mixfile))
-    
     compile_path = Mix.Project.compile_path(project)
     # We need to create this directory and add it to the load path so that
     # `Application.app_dir` works
@@ -41,14 +40,11 @@ defmodule Mix.Tasks.Autodeps.Recursive do
   end
 
   defp each_module(file, module, _bin) do
-    root = Process.get(:project_root)
-    :ets.insert(:found_deps, {module, root, file})
+    :ets.insert(:module_location, {module, file})
   end
 
   defp each_file(file, lexical) do
-    {compile, structs, runtime} =
-      Kernel.LexicalTracker.remote_references(lexical)
-
+    {compile, structs, runtime} = Kernel.LexicalTracker.remote_references(lexical)
     :ets.insert(:found_deps, {file, compile ++ structs, runtime ++ structs})
   end
 end

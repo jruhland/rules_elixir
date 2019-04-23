@@ -1,19 +1,11 @@
-genrule(
-    name = "elixir_lang",
-    srcs = glob(include = ["Makefile", "lib/**"],
-                exclude = ["lib/**/* */**", "lib/**/ebin/**"],
-                exclude_directories = 1),
-    message = "Building elixir...",
-    cmd = """
+_elixir_build_cmd = """
     set -e
     GEN_ROOT=`pwd`
     #cd external/elixir/elixir-1.8.1/
-    cd external/elixir/elixir-1.9-dev/
-    echo "================================================================"
-    ls
+    #cd external/elixir/elixir-1.9-dev/
+    cd external/elixir/{elixir_version}
     ELIXIR_ROOT=`pwd`
     make compile
-    echo "MAKE FINISHED"
     cd $$GEN_ROOT
     mkdir $(OUTS)
     # create directory structure that the elixir binaries expect
@@ -23,7 +15,18 @@ genrule(
       mkdir $$app
       cp -r $$ELIXIR_ROOT/lib/$$app/ebin $$app
     done
-    """,
+"""
+
+genrule(
+    name = "elixir_lang",
+    srcs = glob(include = ["Makefile", "lib/**"],
+                exclude = [
+                    "lib/**/* */**",  # paths with spaces
+                    "lib/**/ebin/**", # existing binaries
+                ],
+                exclude_directories = 1),
+    message = "Building elixir from source...",
+    cmd = _elixir_build_cmd.format(elixir_version = "elixir-1.9-dev"),
     outs = ["bin", "lib"]
 )
 

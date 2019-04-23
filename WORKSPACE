@@ -1,15 +1,5 @@
 workspace(name = "rules_elixir")
 
-load("@rules_elixir//:deps.bzl", "elixir_rules_dependencies")
-
-elixir_rules_dependencies()
-
-# new_local_repository(
-#     name = "elixir",
-#     path = "c:/Users/rmcq/Desktop/elixir/elixir/",
-#     build_file = "elixir.BUILD"
-# )
-
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 http_archive(
     name = "elixir",

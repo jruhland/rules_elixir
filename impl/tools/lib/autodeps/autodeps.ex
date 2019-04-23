@@ -36,10 +36,10 @@ defmodule Mix.Tasks.Autodeps do
 
   defp parse_args(args) do
     {parsed, positional, invalid} =  OptionParser.parse(args, strict: @switches)
-    if Enum.empty?(positional) do
+    if positional != [] do
       IO.puts("warning: positional args unsupported: #{inspect(positional)}")
     end
-    if not Enum.empty?(invalid) do
+    if invalid != [] do
       IO.puts("warning: invalid arguments: #{inspect(invalid)}")
     end
     parsed

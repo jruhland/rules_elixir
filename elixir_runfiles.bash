@@ -20,5 +20,8 @@ else
     exit 1
 fi
 # --- end runfiles.bash initialization ---
-RUNFILES_LIB_DEBUG=1
-exec $(rlocation elixir/bin)/$1 "${@:2}"
+#RUNFILES_LIB_DEBUG=1
+# WINDOWS MANIFEST FILE INCLUDES WORKSPACE...
+#exec $(rlocation elixir/bin)/$1 "${@:2}"
+# REAL SYMLINKS DON'T
+exec $1 "${@:2}"

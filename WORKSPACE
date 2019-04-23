@@ -5,7 +5,9 @@ http_archive(
     name = "elixir",
     # urls = ["https://github.com/elixir-lang/elixir/archive/v1.8.1.tar.gz"],
     # sha256 = "de8c636ea999392496ccd9a204ccccbc8cb7f417d948fd12692cda2bd02d9822",
+
     urls = ["https://github.com/fazzone/elixir/archive/1.9-dev.tar.gz"],
+    sha256 = "fc946bb482e1cb1e7cb1f04f82191cc5cb58baff6c061f507b01f4b5023a1156",
     build_file = "@//:elixir.BUILD"
 )
 

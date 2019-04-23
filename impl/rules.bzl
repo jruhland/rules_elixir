@@ -16,7 +16,7 @@ def elixir_compile(ctx, srcs, out, loadpath = []):
         outputs = [out],
         inputs = depset(direct = srcs, transitive = [loadpath]),
         arguments = [args],
-        use_default_shell_env = True,
+        env = {"HOME": "."}
     )
 
 def _elixir_library_impl(ctx):
@@ -70,7 +70,10 @@ elixir_library = rule(
 )
 
 def _rlocation(ctx, runfile):
-    return "$(rlocation {}/{})".format(ctx.workspace_name, runfile.short_path)
+    # NOTE: Windows runfiles manifest file includes workspace name...
+    # but if we have real symlinks they don't have workspace name... 
+    #return "$(rlocation {}/{})".format(ctx.workspace_name, runfile.short_path)
+    return runfile.short_path
 
 def _elixir_script_impl(ctx):
     lib_runfiles = ctx.runfiles(collect_default = True, collect_data = True)

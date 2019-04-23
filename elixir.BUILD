@@ -3,9 +3,11 @@ _elixir_build_cmd = """
     GEN_ROOT=`pwd`
     #cd external/elixir/elixir-1.8.1/
     #cd external/elixir/elixir-1.9-dev/
-    cd external/elixir/{elixir_version}
+    echo $$GEN_ROOT
+    cd -P external/elixir/{elixir_version}
+    cd `dirname $$(readlink Makefile)`
     ELIXIR_ROOT=`pwd`
-    make compile
+    HOME=. make compile
     cd $$GEN_ROOT
     mkdir $(OUTS)
     # create directory structure that the elixir binaries expect
@@ -17,14 +19,11 @@ _elixir_build_cmd = """
     done
 """
 
+_elixir_glob_prefix = "external/elixir/"
+
 genrule(
     name = "elixir_lang",
-    srcs = glob(include = ["Makefile", "lib/**"],
-                exclude = [
-                    "lib/**/* */**",  # paths with spaces
-                    "lib/**/ebin/**", # existing binaries
-                ],
-                exclude_directories = 1),
+    srcs = glob(["**"]),
     message = "Building elixir from source...",
     cmd = _elixir_build_cmd.format(elixir_version = "elixir-1.9-dev"),
     outs = ["bin", "lib"]

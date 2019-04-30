@@ -22,6 +22,11 @@ fi
 # --- end runfiles.bash initialization ---
 #RUNFILES_LIB_DEBUG=1
 # WINDOWS MANIFEST FILE INCLUDES WORKSPACE...
-#exec $(rlocation elixir/bin)/$1 "${@:2}"
-# REAL SYMLINKS DON'T
-exec $1 "${@:2}"
+exec $(rlocation elixir/bin)/$1 "${@:2}"
+# REAL SYMLINKS DON'T?
+
+# echo "ELIXIR_RUNFILES!! {elixir_tool}"
+# find .
+# echo "======================================"
+
+#exec $1 "${@:2}"

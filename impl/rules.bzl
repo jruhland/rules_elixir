@@ -16,7 +16,8 @@ def elixir_compile(ctx, srcs, out, loadpath = []):
         outputs = [out],
         inputs = depset(direct = srcs, transitive = [loadpath]),
         arguments = [args],
-        env = {"HOME": "."}
+        env = {"HOME": ".",
+               "LANG": "en_US.UTF-8"}
     )
 
 def _elixir_library_impl(ctx):
@@ -122,40 +123,79 @@ def elixir_script(name = None, **kwargs):
         visibility = ["//visibility:public"],
     )
         
+#_mix_project_deps_impl?
 def _mix_project_impl(ctx):
-    print("elixirc_files = ,", ctx.files.elixirc_files)
-    
-    f = ctx.actions.declare_file("whatever")
-    ctx.actions.write(
-        output = f,
-        content = "whatever"
+    out = ctx.actions.declare_directory("third_party")
+    #out = ctx.actions.declare_directory(ctx.attr.build_path)
+    args = ctx.actions.args()
+    args.add_all(["elixir", "-e",
+        """
+        Mix.start
+        Mix.CLI.main
+        # Copy because I'm not clever enough to set up the symlinks
+        # System cp because File.cp_r does not follow links 
+        System.cmd("cp", ["-r", "{build_path}", "{out_dir}"])
+        """.format(
+            out_dir = out.path,
+            build_path = ctx.attr.build_path,
+        ),
+        "deps.compile",
+    ])
+    args.add_all(ctx.attr.deps_names)
+    ctx.actions.run(
+        executable = ctx.executable._elixir_tool,
+        inputs = (
+            ctx.files.mixfile
+            + ctx.files.lockfile
+            + ctx.files.apps_mixfiles
+            + ctx.files.deps_tree
+        ),
+        progress_message = "Compiling {} third-party Mix dependencies".format(len(ctx.attr.deps_names)),
+        outputs = [out],
+        arguments = [args],
+        env = {"HOME": "/Users/russell",
+               "LANG": "en_US.UTF-8",
+               "PATH": "/bin:/usr/bin:/usr/local/bin"}
     )
     return [
-        DefaultInfo(files = depset([f]))
+        DefaultInfo(files = depset([out]))
     ]
+
+_mix_project_attrs = {
+    "mixfile":  attr.label(allow_single_file = ["mix.exs"]),
+    "lockfile": attr.label(allow_single_file = ["mix.lock"]),        
+    "elixirc_files": attr.label_list(
+        allow_files = True,
+    ),
+    "build_path": attr.string(),
+    "deps_tree": attr.label_list(
+        allow_files = True,
+    ),
+    "deps_names": attr.string_list(),
+    "apps_mixfiles": attr.label_list(allow_files = True),
+    "config_path": attr.label(
+        allow_single_file = True,
+    )
+}
 
 mix_project_rule = rule(
     _mix_project_impl,
-    attrs = {
-        "mixfile": attr.label(
-            allow_single_file = ["mix.exs"],
-        ),
-        "elixirc_files": attr.label_list(
-            allow_files = True,
-        ),
-        "build_path": attr.label(
-            allow_single_file = True,
-        )
-    }
+    attrs = dict(_elixir_common_attrs.items() + _mix_project_attrs.items()),
 )
 
 def mix_project(name = None,
                 elixirc_paths = [],
+                deps_path = None,
+                apps_path = None,
                 **kwargs):
+    print("kwargs = ", kwargs)
     mix_project_rule(
         name = name,
         mixfile = "mix.exs",
+        lockfile = "mix.lock",
         elixirc_files = native.glob([d + "/**" for d in elixirc_paths]),
+        deps_tree = native.glob(["{}/**".format(deps_path)]),
+        apps_mixfiles = native.glob(["{}/*/mix.exs".format(apps_path)]),
         **kwargs
     )
 

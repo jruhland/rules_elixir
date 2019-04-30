@@ -10,7 +10,7 @@ defmodule RulesElixir.Tools.Bazel do
   defmodule Def,  do: defstruct [:name, {:params, []}, :body]
   defmodule Root, do: defstruct [:body]
 
-  def to_iodata(body, opts \\ %Inspect.Opts{}) do
+  def to_iodata(body, opts \\ %Inspect.Opts{limit: :infinity}) do
     A.format(bazel_doc(%Root{body: body}, opts), @width)
   end
 

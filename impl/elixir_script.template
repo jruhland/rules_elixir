@@ -21,4 +21,6 @@ else
 fi
 # --- end runfiles.bash initialization ---
 #RUNFILES_LIB_DEBUG=1
-$BUILD_WORKSPACE_DIRECTORY/{elixir_tool} elixir {loadpath} {srcs} $@
+EXE="$BUILD_WORKSPACE_DIRECTORY/{elixir_tool}"
+echo "RUNNING $EXE"
+$EXE elixir {loadpath} {srcs} $@

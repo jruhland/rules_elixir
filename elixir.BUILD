@@ -4,7 +4,8 @@ _elixir_build_cmd = """
     #cd external/elixir/elixir-1.8.1/
     #cd external/elixir/elixir-1.9-dev/
     echo $$GEN_ROOT
-    cd -P external/elixir/{elixir_version}
+    #cd -P external/elixir/{elixir_version}
+    cd external/elixir
     cd `dirname $$(readlink Makefile)`
     ELIXIR_ROOT=`pwd`
     HOME=. make compile

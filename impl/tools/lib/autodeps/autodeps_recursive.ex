@@ -16,8 +16,9 @@ defmodule Mix.Tasks.Autodeps.Recursive do
     project = Mix.Project.config()
 
     # Phoenix really wants to be loaded at compile time..whatever
-    if :phoenix in Keyword.get(project, :deps, []) do
-      {:ok, _} = Application.ensure_all_started(:phoenix)
+    case :code.lib_dir(:phoenix) do
+      {:error, :bad_name} -> nil
+      lib when is_list(lib) -> Application.ensure_all_started(:phoenix)
     end
 
     all_paths =
@@ -40,7 +41,12 @@ defmodule Mix.Tasks.Autodeps.Recursive do
   end
 
   defp each_module(file, module, _bin) do
+    #schema? = function_exported?(module, :__schema__, 1)
+    #IO.puts("#{module}, are you an ecto schema? #{schema?}")
     :ets.insert(:module_location, {module, file})
+    if not Enum.empty?(module.__info__(:macros)) do
+      :ets.insert(:file_info, {file, true})
+    end
   end
 
   defp each_file(file, lexical) do

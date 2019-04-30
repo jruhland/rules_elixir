@@ -1,21 +1,7 @@
 workspace(name = "rules_elixir")
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-http_archive(
-    name = "elixir",
-    # urls = ["https://github.com/elixir-lang/elixir/archive/v1.8.1.tar.gz"],
-    # sha256 = "de8c636ea999392496ccd9a204ccccbc8cb7f417d948fd12692cda2bd02d9822",
+load("@rules_elixir//:deps.bzl", "elixir_rules_dependencies")
 
-    urls = ["https://github.com/fazzone/elixir/archive/1.9-dev.tar.gz"],
-    sha256 = "fc946bb482e1cb1e7cb1f04f82191cc5cb58baff6c061f507b01f4b5023a1156",
-    build_file = "@//:elixir.BUILD"
-)
+elixir_rules_dependencies()
 
-# load("@bazel_tools//tools/build_defs/repo:git.bzl", "new_git_repository")
 
-# new_git_repository(
-#     name = "elixir",
-#     remote = "https://github.com/elixir-lang/elixir.git",
-#     commit = "459319fb751f81399b6e3826789782452ea5c3c9",
-#     build_file = "@//:elixir.BUILD",
-# )

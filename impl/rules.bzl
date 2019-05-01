@@ -33,10 +33,6 @@ def _elixir_library_impl(ctx):
     return [
         DefaultInfo(
             files = depset([ebin_dir]),
-            default_runfiles = ctx.runfiles(
-                files = [ebin_dir],
-                transitive_files = runtime_loadpath,
-            )
         ),
         ElixirLibrary(
             loadpath = depset(
@@ -77,7 +73,11 @@ def _rlocation(ctx, runfile):
     return runfile.short_path
 
 def _elixir_script_impl(ctx):
-    lib_runfiles = ctx.runfiles(collect_default = True, collect_data = True)
+    lib_runfiles = ctx.runfiles(
+        transitive_files = depset(
+            transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.deps]
+        ),
+    )
     src_runfiles = ctx.runfiles(files = ctx.files.srcs)
 
     ctx.actions.expand_template(
@@ -198,10 +198,4 @@ def mix_project(name = None,
         apps_mixfiles = native.glob(["{}/*/mix.exs".format(apps_path)]),
         **kwargs
     )
-
-
-# Third-party dependencies don't change very much, and might be built in weird ways.
-# So for simplicity's sake, we are fine just building them with mix all at once
-
-
 

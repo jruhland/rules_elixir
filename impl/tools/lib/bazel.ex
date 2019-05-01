@@ -31,7 +31,8 @@ defmodule RulesElixir.Tools.Bazel do
   end
 
   defp rule_doc(rule, params, opts) do
-    A.container_doc("#{rule}(", params, ")", opts,
+    has_value = Enum.filter(params, fn {_attr, value} -> !is_nil(value) end)
+    A.container_doc("#{rule}(", has_value, ")", opts,
       fn {attr, value}, opts ->
         A.space(
           to_string(attr),

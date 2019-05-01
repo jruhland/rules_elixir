@@ -8,9 +8,7 @@ defmodule ReadMix do
   def run(config) do
     cfg = Enum.into(config, %{})
     cwd = File.cwd!()
-    all_deps_names = config |> Mix.Project.deps_paths |> Map.keys |> MapSet.new
-    apps_names = config |> Mix.Project.apps_paths |> Map.keys |> MapSet.new
-    third_party_deps = all_deps_names |> MapSet.difference(apps_names) |> Enum.map(&to_string/1)
+    third_party_deps = all_deps_names(config) |> MapSet.difference(in_umbrella_deps(config)) |> Enum.map(&to_string/1)
     iodata = Bazel.to_iodata(
       [@load_mix_rules,
        %Bazel.Rule{rule: "mix_project",
@@ -19,12 +17,23 @@ defmodule ReadMix do
 	                    config_path: cfg.config_path,
 	                    deps_path: cfg.deps_path,
                             deps_names: third_party_deps,
-	                    apps_path: cfg.apps_path,
+	                    apps_path: Map.get(cfg, :apps_path, nil),
                             build_path: Path.relative_to(Mix.Project.build_path(config), cwd)]},
        "\n"])
     File.write!("BUILD", iodata)
   end
   
+  defp all_deps_names(config) do
+    config |> Mix.Project.deps_paths |> Map.keys |> MapSet.new
+  end
+
+  defp in_umbrella_deps(config) do
+    case Mix.Project.apps_paths(config) do
+      nil -> MapSet.new
+      paths -> MapSet.new(Map.keys(paths))
+    end
+  end
+
 end
 
 File.cd!(System.get_env("BUILD_WORKING_DIRECTORY"))
@@ -36,7 +45,6 @@ Mix.Task.run("local.hex", ["--force"])
 Code.compile_file("mix.exs")
 
 IO.inspect(Mix.Project.config)
-IO.inspect(Path.basename(File.cwd!()))
 IO.puts("================================================================")
 ReadMix.run(Mix.Project.config)
 

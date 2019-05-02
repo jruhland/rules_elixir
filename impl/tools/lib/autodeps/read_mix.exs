@@ -8,11 +8,16 @@ defmodule ReadMix do
   def run(config) do
     cfg = Enum.into(config, %{})
     cwd = File.cwd!()
-    third_party_deps = all_deps_names(config) |> MapSet.difference(in_umbrella_deps(config)) |> Enum.map(&to_string/1)
+    third_party_deps =
+      config
+      |> all_deps_names
+      |> MapSet.difference(in_umbrella_deps(config))
+      |> Enum.map(&to_string/1)
     iodata = Bazel.to_iodata(
       [@load_mix_rules,
        %Bazel.Rule{rule: "mix_project",
                    params: [name: to_string(cfg.app || Path.basename(cwd)),
+                            mix_env: to_string(Mix.env),
 	                    elixirc_paths: cfg.elixirc_paths,
 	                    config_path: cfg.config_path,
 	                    deps_path: cfg.deps_path,

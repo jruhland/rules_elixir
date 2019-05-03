@@ -6,10 +6,10 @@ elixir_script(
     deps = ["//impl/tools/lib/autodeps:mix_tasks"]
 )
 
-elixir_script(
-    name = "read_mix",
-    srcs = ["//impl/tools/lib/autodeps:read_mix.exs"],
-    deps = ["//impl/tools/lib:common", "//impl/tools/lib:bazel"]
-)
+# elixir_script(
+#     name = "read_mix",
+#     srcs = ["//impl/tools/lib/autodeps:read_mix.exs"],
+#     deps = ["//impl/tools/lib:common", "//impl/tools/lib:bazel"]
+# )
 
 

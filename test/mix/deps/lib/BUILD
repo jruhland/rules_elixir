@@ -8,3 +8,10 @@ elixir_script(
     srcs = ["run.exs"],
     deps = [":deps", "//test/mix/deps:deps_third_party"],
 )
+
+
+elixir_script(
+    name = "run2",
+    srcs = ["run2.exs"],
+    deps = ["//test/mix/deps:deps_all"],
+)

@@ -7,7 +7,6 @@ _mix_project_attrs = {
     "mixfile":        attr.label(allow_single_file = ["mix.exs"]),
     "lockfile":       attr.label(allow_single_file = ["mix.lock"]),        
     "mix_env":        attr.string(),
-    "elixirc_files":  attr.label_list(allow_files = True),
     "build_path":     attr.string(),
     "deps_tree":      attr.label_list(allow_files = True),
     "deps_names":     attr.string_list(),
@@ -47,6 +46,8 @@ def _mix_third_party_deps_impl(ctx):
     ])
     args.add_all(ctx.attr.deps_names)
 
+    print("APPS MIXFILES ", ctx.files.apps_mixfiles)
+
     ctx.actions.run(
         executable = ctx.executable._elixir_tool,
         inputs = (
@@ -59,6 +60,7 @@ def _mix_third_party_deps_impl(ctx):
         outputs = [out_dir] + ebin_dirs,
         arguments = [args],
         env = {
+            # mix needs the home directory to find Hex and rebar3
             "HOME": "/Users/russell",
             "LANG": "en_US.UTF-8",
             "PATH": "/bin:/usr/bin:/usr/local/bin",
@@ -68,6 +70,7 @@ def _mix_third_party_deps_impl(ctx):
     return [
         ElixirLibrary(
             loadpath = depset(ebin_dirs),
+            runtime_deps = depset([]),
         ),
         DefaultInfo(
             files = depset(ebin_dirs),
@@ -79,30 +82,34 @@ mix_third_party_deps = rule(
     attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items()),
 )
 
-
-# def _mix_all_impl = rule(
-# )
-
+# SOURCES: the umbrella project compile_all target depends on the same target of all apps
+# CONFIG: each child app depends on the config of the umbrella
+# DEPS: each child app depends on the deps of the umbrella
+# the reason that we care at all is so that we can build child apps individually?
 
 def mix_project(name = None,
-                elixirc_paths = [],
                 deps_path = None,
                 apps_path = None,
+                lib_targets = [],
                 **kwargs):
-    print("elixirc_paths = ", elixirc_paths)
 
-    print("elixirc files glob = ", native.glob([d + "/**" for d in elixirc_paths]))
-    print("glob 2 = ", native.glob(["**"]))
+    third_party = name + "_third_party"
 
     mix_third_party_deps(
-        name = name + "_third_party",
+        name = third_party,
         mixfile = "mix.exs",
         lockfile = "mix.lock",
-        elixirc_files = native.glob(["{}/**".format(d) for d in elixirc_paths]),
         deps_tree = native.glob(["{}/**".format(deps_path)]),
         apps_mixfiles = native.glob(["{}/*/mix.exs".format(apps_path)]),
         visibility = ["//visibility:public"],
         **kwargs
+    )
+
+    elixir_library(
+        name = name + "_all",
+        srcs = ["//impl:empty.ex"],
+        macroexpand_deps = [third_party] + lib_targets,
+        visibility = ["//visibility:public"],
     )
     
 

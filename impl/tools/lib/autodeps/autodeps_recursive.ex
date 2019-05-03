@@ -1,5 +1,7 @@
 defmodule Mix.Tasks.Autodeps.Recursive do
   use Mix.Task
+  alias RulesElixir.Tools.{Common, Bazel, ReadMix}
+
   @recursive true
   @moduledoc """
   Recursive helper task which does the work of actually finding dependency information.
@@ -8,13 +10,15 @@ defmodule Mix.Tasks.Autodeps.Recursive do
   """
 
   @impl true
-  def run(_args) do
+  def run(opts) do
+
     Mix.Project.get!()
 
     Mix.Task.run("loadpaths")
     Mix.Task.run("loadconfig")
     project = Mix.Project.config()
 
+    IO.puts("RECURSIVE #{inspect(project[:app])} #{inspect opts}")
     # Phoenix really wants to be loaded at compile time..whatever
     case :code.lib_dir(:phoenix) do
       {:error, :bad_name} -> nil
@@ -38,11 +42,15 @@ defmodule Mix.Tasks.Autodeps.Recursive do
       each_file: &each_file/2,
       each_module: &each_module/3
     )
+
+    # project
+    # |> ReadMix.project_build_file(all_paths)
+    # |> Bazel.to_iodata
+    # |> Common.output_file("BUILD", Keyword.put(opts, :overwrite, true))
+
   end
 
   defp each_module(file, module, _bin) do
-    #schema? = function_exported?(module, :__schema__, 1)
-    #IO.puts("#{module}, are you an ecto schema? #{schema?}")
     :ets.insert(:module_location, {module, file})
     if not Enum.empty?(module.__info__(:macros)) do
       :ets.insert(:file_info, {file, true})
@@ -51,6 +59,6 @@ defmodule Mix.Tasks.Autodeps.Recursive do
 
   defp each_file(file, lexical) do
     {compile, structs, runtime} = Kernel.LexicalTracker.remote_references(lexical)
-    :ets.insert(:found_deps, {file, compile ++ structs, runtime ++ structs})
+    :ets.insert(:found_deps, {file, structs ++ compile, structs ++ runtime})
   end
 end

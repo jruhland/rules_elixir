@@ -23,19 +23,20 @@ _elixir_library_attrs = {
         doc = "Source files",
     ),
     "compile_deps": attr.label_list(),
+    "macroexpand_deps": attr.label_list(),
     "runtime_deps": attr.label_list(),
 }
 
 def _elixir_library_impl(ctx):
     ebin_dir = ctx.actions.declare_directory(ctx.label.name + "_ebin")
-    compile_loadpath = depset(transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.compile_deps])
     elixir_compile(
         ctx,
         srcs = ctx.files.srcs,
-        loadpath = compile_loadpath,
+        loadpath = depset(transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.compile_deps]),
         out = ebin_dir,
     )
-    runtime_loadpath = depset(transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.runtime_deps])
+    print("direct runtime deps ", ctx.attr.runtime_deps) 
+    print("Transitive runtime deps for ", ctx.label.name, [dep[ElixirLibrary].runtime_deps for dep in ctx.attr.runtime_deps])
     return [
         DefaultInfo(
             files = depset([ebin_dir]),
@@ -43,7 +44,11 @@ def _elixir_library_impl(ctx):
         ElixirLibrary(
             loadpath = depset(
                 direct = [ebin_dir],
-                transitive = [runtime_loadpath]
+                transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.macroexpand_deps],
+            ),
+            runtime_deps = depset(
+                direct = ctx.attr.runtime_deps,
+                transitive = [dep[ElixirLibrary].runtime_deps for dep in ctx.attr.runtime_deps],
             ),
         )
     ]
@@ -115,3 +120,5 @@ def elixir_script(name = None, **kwargs):
         srcs = [runner],
         visibility = ["//visibility:public"],
     )
+
+    

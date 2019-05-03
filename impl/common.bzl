@@ -1,7 +1,8 @@
 ElixirLibrary = provider(
     doc = "Provider for compiled .beam modules stored in `ebin` directories",
     fields = {
-        "loadpath": "depset of `ebin` directories"
+        "loadpath": "depset of `ebin` directories",
+        "runtime_deps": "yeah",
     }
 )
 

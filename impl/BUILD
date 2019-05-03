@@ -1,1 +1,1 @@
-exports_files(["elixir_script.template"])
+exports_files(["elixir_script.template", "empty.ex"])

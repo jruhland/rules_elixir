@@ -58,7 +58,8 @@ defmodule Mix.Tasks.Autodeps.Recursive do
   end
 
   defp each_file(file, lexical) do
-    {compile, structs, runtime} = Kernel.LexicalTracker.remote_references(lexical)
+    out = {compile, structs, runtime} = Kernel.LexicalTracker.remote_references(lexical)
+    IO.inspect({file, %{compile: compile, structs: structs, runtime: runtime}})
     :ets.insert(:found_deps, {file, structs ++ compile, structs ++ runtime})
   end
 end

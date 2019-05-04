@@ -4,7 +4,7 @@ elixir_library(
     name = "mix_tasks",
     srcs = ["read_mix.ex", "autodeps_recursive.ex", "autodeps.ex"],
     compile_deps = ["//impl/tools/lib:bazel"],
-    macroexpand_deps = ["//impl/tools/lib:bazel", "//impl/tools/lib:common"],
+    exported_deps = ["//impl/tools/lib:bazel", "//impl/tools/lib:common"],
     visibility = ["//impl/tools:__pkg__"],
 )
 

@@ -8,10 +8,13 @@ defmodule RulesElixir.Tools.ReadMix do
   def project_build_file(config, compiled_files) do
     cfg = Enum.into(config, %{})
     cwd = File.cwd!()
+
+    apps = in_umbrella_deps(config)
+
     third_party_deps =
       config
       |> all_deps_names
-      |> MapSet.difference(in_umbrella_deps(config))
+      |> MapSet.difference(apps)
       |> Enum.map(&to_string/1)
 
     %Bazel.Rule{
@@ -22,6 +25,7 @@ defmodule RulesElixir.Tools.ReadMix do
         config_path: cfg.config_path,
         deps_path: cfg.deps_path,
         deps_names: third_party_deps,                   
+	apps_names: [to_string(cfg.app) | Enum.to_list(apps)],
         lib_targets: Enum.into(compiled_files, [], &Common.qualified_target/1),
         apps_path: Map.get(cfg, :apps_path, nil),
         build_path: ensure_relative(Mix.Project.build_path(config), cwd),

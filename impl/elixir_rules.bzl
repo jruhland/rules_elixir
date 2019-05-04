@@ -23,7 +23,15 @@ _elixir_library_attrs = {
         doc = "Source files",
     ),
     "compile_deps": attr.label_list(),
-    "macroexpand_deps": attr.label_list(),
+    "exported_deps": attr.label_list(
+        default = [],
+        doc = """
+        Re-exported deps of this library.  
+        Dependents of this library will have access to the library itself and its exported_deps.
+        This is useful for e.g. the runtime deps of a macro, which need to exist at compile-time
+        for everyone who calls the macro.
+        """
+    ),
     "runtime_deps": attr.label_list(),
 }
 
@@ -35,17 +43,19 @@ def _elixir_library_impl(ctx):
         loadpath = depset(transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.compile_deps]),
         out = ebin_dir,
     )
-    print("direct runtime deps ", ctx.attr.runtime_deps) 
-    print("Transitive runtime deps for ", ctx.label.name, [dep[ElixirLibrary].runtime_deps for dep in ctx.attr.runtime_deps])
+    #print("direct runtime deps for", ctx.label.name, ctx.attr.runtime_deps) 
+    #print("Transitive runtime deps for", ctx.label.name, [(dep, dep[ElixirLibrary].runtime_deps) for dep in ctx.attr.runtime_deps])
+    transitive_loadpath = depset(
+        direct = [ebin_dir],
+        transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.exported_deps],
+    )
+    # print("Transitive loadpath for", ctx.label.name, transitive_loadpath)
     return [
         DefaultInfo(
             files = depset([ebin_dir]),
         ),
         ElixirLibrary(
-            loadpath = depset(
-                direct = [ebin_dir],
-                transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.macroexpand_deps],
-            ),
+            loadpath = transitive_loadpath,
             runtime_deps = depset(
                 direct = ctx.attr.runtime_deps,
                 transitive = [dep[ElixirLibrary].runtime_deps for dep in ctx.attr.runtime_deps],
@@ -120,5 +130,8 @@ def elixir_script(name = None, **kwargs):
         srcs = [runner],
         visibility = ["//visibility:public"],
     )
+
+    
+    
 
     

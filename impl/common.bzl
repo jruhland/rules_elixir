@@ -1,8 +1,23 @@
 ElixirLibrary = provider(
-    doc = "Provider for compiled .beam modules stored in `ebin` directories",
+    doc = "Provider for analysis-phase information about Elixir compilation",
     fields = {
-        "loadpath": "depset of `ebin` directories",
-        "runtime_deps": "yeah",
+        "loadpath":
+        """
+        (depset of Files)
+        Contains one or more `ebin` directories which contain `.beam` files
+        for each module produced when compiling this library.  In other words,
+        it contains the directories you need to have on your loadpath in order
+        to find the compiled modules.
+        """,
+
+        "runtime_deps":
+        """
+        (depset of Targets)
+        Contains references to other libraries that this library depends on
+        at runtime only.  It must contain references (ie Targets) rather than
+        actual generated files so as not to create circular deps, since circular
+        runtime dependencies between modules are very much allowed in Elixir.
+        """,
     }
 )
 

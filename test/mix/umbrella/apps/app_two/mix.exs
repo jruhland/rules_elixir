@@ -26,6 +26,7 @@ defmodule AppTwo.MixProject do
   defp deps do
     [
       {:common, in_umbrella: true},
+      {:only_runtime, in_umbrella: true},
       {:mimerl, "~> 1.2"},
 
       # {:dep_from_hexpm, "~> 0.3.0"},

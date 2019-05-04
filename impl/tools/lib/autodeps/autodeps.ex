@@ -42,7 +42,12 @@ defmodule Mix.Tasks.Autodeps do
     project_dir = Path.dirname(mixfile)
     project = Mix.Project.config
 
-    umbrella_target = Mix.Project.umbrella?(project) && Common.qualified_target(project_dir)
+    Process.put(:build_path, Mix.Project.build_path(project))
+
+    umbrella_target = Common.qualified_target(project_dir)
+    Process.put(:third_party_target,
+      Common.qualified_target("#{project_dir}/#{to_string(project[:app])}_third_party")
+    )
     Mix.Task.run("autodeps.recursive", Keyword.put(options, :umbrella, umbrella_target))
 
     generate_build_files(project_dir, options)
@@ -93,9 +98,9 @@ defmodule Mix.Tasks.Autodeps do
     [
       name: Path.rootname(basename),
       srcs: [basename],
-      compile_deps: modules_to_targets(file, compile_deps),
-      runtime_deps: runtime_deps,
-      macroexpand_deps: (if defines_macros?, do: runtime_deps, else: []),
+      compile_deps: modules_to_targets(file, compile_deps, include_third_party: true),
+      #runtime_deps: runtime_deps,
+      exported_deps: (if defines_macros?, do: runtime_deps, else: nil),
       visibility: ["//visibility:public"],
     ]
   end
@@ -112,22 +117,51 @@ defmodule Mix.Tasks.Autodeps do
     Common.output_file(@build_file_boilerplate, "#{dir}/BUILD", opts)
   end
 
+  defp mix_dep_target(file) do
+    buildpath = Process.get(:build_path)
+    len = byte_size(buildpath)
+    
+    case to_string(file) do
+      <<prefix::binary-size(len), "/lib/", _rest::binary>> when prefix == buildpath ->
+	# Hack this for now
+	{:ok, Process.get(:third_party_target)}
+      _ -> :error
+    end
+  end
 
-  defp modules_to_targets(file, modules) do
+  defp modules_to_targets(file, modules, opts \\ []) do
+    include_third_party? = Keyword.get(opts, :include_third_party, false)
     modules
     |> Enum.flat_map(fn module ->
+      case :code.is_loaded(module) do
+	{:file, f} when is_list(f) ->
+	  IO.puts("#{Path.relative_to(to_string(f), Process.get(:build_path))}")
+	_ -> nil
+      end
+
       case :ets.lookup(:module_location, module) do
         [{_, dep_file}] when dep_file != file -> [dep_file]
-        _ -> []
+        _ ->
+	  with\
+	  true <- include_third_party?,
+	  {:file, f} <- :code.is_loaded(module),
+	  {:ok, target} <- mix_dep_target(f)
+	    do [target]
+	    else _ -> []
+	  end
       end
     end)
     |> Enum.uniq
     |> Enum.map(fn dep_file ->
-      if Path.dirname(dep_file) == Path.dirname(file) do
-	# sort sibling deps first
-	{0, Common.sibling_target(dep_file)}
-      else
-	{1, Common.qualified_target(dep_file)}
+      cond do
+	Path.dirname(dep_file) == Path.dirname(file) ->
+	  # sibling deps first
+	  {0, Common.sibling_target(dep_file)}
+	String.starts_with?(dep_file, "//") ->
+	  # already a target, third pary dep, sort last
+	  {2, dep_file}
+	true ->
+	  {1, Common.qualified_target(dep_file)}
       end
     end)
     |> Enum.sort

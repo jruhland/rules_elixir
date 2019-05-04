@@ -119,7 +119,6 @@ def _elixir_link_impl(ctx):
     ebin_dir = ctx.actions.declare_directory(
         "{}/lib/{}/ebin".format(root_dir_name, ctx.attr.app)
     )
-
     
     precompiled_deps = depset(
         transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.libs]
@@ -131,34 +130,34 @@ def _elixir_link_impl(ctx):
     compiled_runtime_deps = depset(
         transitive = [dep[ElixirLibrary].loadpath for dep in runtime_dep_targets.to_list()]
     )
-    third_party_dir = ctx.attr.third_party[BuildOverlay].root_dir
-    third_party_app_dirs = [ctx.actions.declare_directory("{}/lib/{}/ebin".format(root_dir_name, app))
-                            for app, _ in ctx.attr.third_party[BuildOverlay].app_dirs.items()]
+    third_party_root_dir = ctx.attr.third_party[BuildOverlay].root_dir
+    third_party_app_dirs = dict([
+        (app, ctx.actions.declare_directory("{}/lib/{}/ebin".format(root_dir_name, app)))
+        for app, _ in ctx.attr.third_party[BuildOverlay].app_dirs.items()
+    ])
     
     modules_to_link = depset(
-        direct = [third_party_dir],
+        direct = [third_party_root_dir],
         transitive = [precompiled_deps, compiled_runtime_deps],
     )
     ctx.actions.run_shell(
-        #inputs = depset(direct = third_party_dirs, transitive = [modules_to_link]),
         inputs = modules_to_link,
-        outputs = [out_dir, ebin_dir] + third_party_app_dirs,
+        outputs = [out_dir, ebin_dir] + third_party_app_dirs.values(),
         arguments = [
             ctx.actions.args()
             .add(out_dir.path)
             .add(ebin_dir.path)
             .add(ctx.attr.mix_env)
-            .add(third_party_dir.path)
+            .add(third_party_root_dir.path)
             .add_all(precompiled_deps)
             .add_all(compiled_runtime_deps),
         ],
         command = """
         set -x
-        echo "what the fuck"
-        ROOT=$1 ; shift
-        LOCAL_EBIN=$1 ; shift
-        MIX_ENV=$1 ; shift
-        THIRD_PARTY=$1 ;shift
+        ROOT=$1        ; shift
+        LOCAL_EBIN=$1  ; shift
+        MIX_ENV=$1     ; shift
+        THIRD_PARTY=$1 ; shift
         cp -r $THIRD_PARTY/$MIX_ENV/* $ROOT
         # since we copy all of OUR compiled code in one `cp`, we should be safe
         # from trying to copy multiple files into the same-named beam file
@@ -173,17 +172,127 @@ def _elixir_link_impl(ctx):
         ),
         ElixirLibrary(
             loadpath = depset(
-                direct = [ebin_dir] + third_party_app_dirs,
-                #transitive = [ctx.attr.third_party[ElixirLibrary].loadpath],
+                direct = [ebin_dir] + third_party_app_dirs.values(),
             ),
             runtime_deps = depset([]),
-        )
+        ),
+        BuildOverlay(
+            root_dir = out_dir,
+            app_dirs = dict([(ctx.attr.app, ebin_dir)] + third_party_app_dirs.items()),
+        ),
     ]
     
 
 elixir_link = rule(
     _elixir_link_impl,
     attrs = dict(elixir_common_attrs.items() + _elixir_link_attrs.items()),    
+)
+
+_mix_compile_app_attrs = {
+    "mix_env": attr.string(),
+    "mixfile": attr.label(allow_single_file = ["mix.exs"]),
+    "lockfile": attr.label(allow_single_file = ["mix.lock"]),
+    "deps_tree":      attr.label_list(allow_files = True),
+    "apps_names":     attr.string_list(),
+    "apps_mixfiles":  attr.label_list(allow_files = True),
+    "build_directory":     attr.label(
+        doc = "label of the `elixir_link` that generates the _build directory"
+    ),
+    "dirname": attr.string(
+        default = "_build",
+    ),
+
+}
+
+def _mix_compile_app_impl(ctx):
+    root_dir = ctx.attr.build_directory[BuildOverlay].root_dir.path
+
+    root_dir_name = "lol/{build_dir}/{mix_env}".format(
+        build_dir = ctx.attr.dirname,
+        mix_env = ctx.attr.mix_env,
+    )
+
+    #out_dir = ctx.actions.declare_directory(root_dir_name)
+    print("root_dir_name", root_dir_name)
+    output_dir = ctx.actions.declare_directory("whatever")
+    app_files = dict([
+        (app, ctx.actions.declare_file("{root}/lib/{app}/ebin/{app}.app".format(
+            root = root_dir_name,
+            app = app,
+        )))
+        for app in ctx.attr.apps_names
+    ])
+    
+    args = ctx.actions.args()
+    # this is the part where we use string.format to construct elixir data structures
+    s = "[" + ",".join(["{{\"{}\", \"{}\"}}".format(k, v.path) for k, v in app_files.items()]) + "]"
+    args.add_all([
+        "elixir", "-e",
+        """
+        
+        IO.inspect(System.argv, label: "argv")
+        IO.puts("build_dir = {build_dir}")
+        IO.puts("out_dir = {output_dir}")
+        IO.puts("project_dir = {project_dir}")
+        
+        :os.cmd(to_charlist("cp -rL {project_dir}/* {output_dir}"))
+        File.mkdir_p!("{output_dir}/_build/dev")
+        :os.cmd(to_charlist("cp -rL {build_dir}/* {output_dir}/_build/dev"))
+
+        IO.puts("my working dir = " <> File.cwd!())
+        IO.inspect({app_files}, label: "app_files")
+
+        for {{app, output}} <- {app_files} do
+          generated_file = "{output_dir}/_build/dev/lib/" <> app <> "/ebin/" <> app <> ".app"
+          File.mkdir_p!(Path.dirname(generated_file))
+        end
+
+        File.cd!("{output_dir}", fn -> Mix.start; Mix.CLI.main; end)
+        IO.puts(:os.cmd(to_charlist("find {output_dir} | grep app")))
+        for {{app, output}} <- {app_files} do
+          generated_file = "{output_dir}/_build/dev/lib/" <> app <> "/ebin/" <> app <> ".app"
+          IO.inspect([generated_file, output], label: "copy?")
+          System.cmd("cp", ["-L", generated_file, output])
+        end
+        """.format(
+            output_dir = output_dir.path,
+            project_dir = ctx.file.mixfile.dirname,
+            build_dir = root_dir,
+            app_files = s,
+        ),
+        "do",
+        "loadpaths",
+        "--no-deps-check",
+        ",",
+        "compile.app",
+    ])
+    args.add_all([app for app in app_files.keys()])
+    ctx.actions.run(
+        executable = ctx.executable._elixir_tool,
+        inputs = ctx.files.apps_mixfiles + ctx.files.deps_tree + [
+            ctx.attr.build_directory[BuildOverlay].root_dir,
+            ctx.file.mixfile,
+            ctx.file.lockfile,
+        ],
+        outputs = [output_dir] + app_files.values(),
+        arguments = [args],
+        env = {
+            # mix needs the home directory to find Hex and rebar3
+            "HOME": "/home/russell",
+            "LANG": "en_US.UTF-8",
+            "PATH": "/bin:/usr/bin:/usr/local/bin",
+        }
+    )
+
+    return [
+        DefaultInfo(
+            files =  depset(app_files.values()),
+        )
+    ]
+
+mix_compile_app = rule(
+    _mix_compile_app_impl,
+    attrs = dict(elixir_common_attrs.items() + _mix_compile_app_attrs.items()),
 )
 
 
@@ -196,6 +305,7 @@ def mix_project(name = None,
                 deps_path = None,
                 apps_path = None,
                 lib_targets = [],
+                apps_names = [],
                 mix_env = None,
                 **kwargs):
 
@@ -207,6 +317,7 @@ def mix_project(name = None,
         lockfile = "mix.lock",
         mix_env = mix_env,
         deps_tree = native.glob(["{}/**".format(deps_path)]),
+        apps_names = apps_names,
         apps_mixfiles = native.glob(["{}/*/mix.exs".format(apps_path)]),
         visibility = ["//visibility:public"],
         **kwargs
@@ -220,6 +331,16 @@ def mix_project(name = None,
         libs = lib_targets,
         visibility = ["//visibility:public"],
     )
-    
+
+    mix_compile_app(
+        name = name + "_compile_app",
+        lockfile = "mix.lock",
+        deps_tree = native.glob(["{}/**".format(deps_path)]),
+        apps_names = apps_names,
+        apps_mixfiles = native.glob(["{}/*/mix.exs".format(apps_path)]),
+        mixfile = "mix.exs",
+        mix_env = mix_env,
+        build_directory = name + "_third_party",
+    )
 
 

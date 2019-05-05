@@ -106,14 +106,16 @@ def _mix_third_party_deps_impl(ctx):
         for subdir in subdirs
     ]
     ebin_dirs = [e.location for e in structure]
-    
+
+    args = ctx.actions.args()
+    args.add_all(ctx.attr.deps_names)
     run_mix_task(
         ctx,
         progress_message = "Compiling {} third-party Mix dependencies".format(len(ctx.attr.deps_names)),
         output_dir = out_dir,
         extra_outputs = ebin_dirs,
         task = "deps.compile",
-        args = ctx.actions.args().add_all(ctx.attr.deps_names)
+        args = args,
     )
 
     generated = depset(ebin_dirs)
@@ -153,15 +155,15 @@ def _elixir_link1_impl(ctx):
     ebin_dir = ctx.actions.declare_directory("{}/{}".format(out_name, subdir))
 
     lib_loadpaths = depset(transitive = [lib[ElixirLibrary].loadpath for lib in ctx.attr.libs])
+    args = ctx.actions.args()
+    args.add(ebin_dir.path)
+    args.add_all(lib_loadpaths, expand_directories = True)
     ctx.actions.run_shell(
         inputs = lib_loadpaths,
         outputs = [out_dir, ebin_dir],
-        arguments = [
-            ctx.actions.args()
-            .add(ebin_dir.path)
-            .add_all(lib_loadpaths)
-        ],
+        arguments = [args],
         command = """
+        echo "args = $@"
         OUT=$1 ; shift
         cp $@ $OUT
         """
@@ -208,15 +210,13 @@ def _elixir_merge_overlays_impl(ctx):
         for overlay in ctx.attr.overlays
         for entry in overlay[BuildOverlay].structure
     ]
-
+    args = ctx.actions.args()
+    args.add(out_dir.path)
+    args.add_all(combined_structure, map_each = overlay_entry_args)
     ctx.actions.run_shell(
         inputs = [e.location for e in combined_structure],
         outputs = [out_dir],
-        arguments = [
-            ctx.actions.args()
-            .add(out_dir.path)
-            .add_all(combined_structure, map_each = overlay_entry_args),
-        ],
+        arguments = [args],
         command = """
         OUT=$1 ; shift
         while (($#)); do

@@ -13,6 +13,6 @@ defmodule OnlyRuntime do
 
   """
   def hello do
-    :world
+    [:hello, :world]
   end
 end

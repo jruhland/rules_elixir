@@ -35,6 +35,9 @@ defmodule Mix.Tasks.Autodeps do
     # Tuples {module, file}
     :ets.new(:module_location, [:set, :public, :named_table, {:write_concurrency, true}])
 
+    # Tuples {file, app}
+    :ets.new(:file_to_app, [:set, :public, :named_table, {:write_concurrency, true}])
+
     # Tuples {file, defines_macros?}
     :ets.new(:file_info, [:set, :public, :named_table, {:write_concurrency, true}])
 
@@ -52,14 +55,16 @@ defmodule Mix.Tasks.Autodeps do
 
     generate_build_files(project_dir, options)
 
-    all_targets =
-      :ets.match(:found_deps, :"$1")
-      |> Enum.map(fn [{file, _, _}] ->
-        Path.rootname(file)
+    targets_by_app =
+      :ets.match(:file_to_app, :"$1")
+      |> Enum.map(fn [{file, app}] ->
+	{to_string(app), Common.qualified_target(file)}
       end)
+      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+      |> IO.inspect(label: "e")
 
     Mix.Project.config
-    |> ReadMix.project_build_file(all_targets)
+    |> ReadMix.project_build_file(targets_by_app)
     |> write_generated_body(project_dir, options)
 
   end
@@ -133,11 +138,6 @@ defmodule Mix.Tasks.Autodeps do
     include_third_party? = Keyword.get(opts, :include_third_party, false)
     modules
     |> Enum.flat_map(fn module ->
-      case :code.is_loaded(module) do
-	{:file, f} when is_list(f) ->
-	  IO.puts("#{Path.relative_to(to_string(f), Process.get(:build_path))}")
-	_ -> nil
-      end
 
       case :ets.lookup(:module_location, module) do
         [{_, dep_file}] when dep_file != file -> [dep_file]

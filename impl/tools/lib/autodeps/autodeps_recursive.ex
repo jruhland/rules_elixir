@@ -19,6 +19,7 @@ defmodule Mix.Tasks.Autodeps.Recursive do
     project = Mix.Project.config()
 
     IO.puts("RECURSIVE #{inspect(project[:app])} #{inspect opts}")
+    Process.put(:this_app, project[:app])
     # Phoenix really wants to be loaded at compile time..whatever
     case :code.lib_dir(:phoenix) do
       {:error, :bad_name} -> nil
@@ -52,6 +53,7 @@ defmodule Mix.Tasks.Autodeps.Recursive do
 
   defp each_module(file, module, _bin) do
     :ets.insert(:module_location, {module, file})
+    :ets.insert(:file_to_app, {file, Process.get(:this_app)})
     if not Enum.empty?(module.__info__(:macros)) do
       :ets.insert(:file_info, {file, true})
     end
@@ -59,7 +61,7 @@ defmodule Mix.Tasks.Autodeps.Recursive do
 
   defp each_file(file, lexical) do
     out = {compile, structs, runtime} = Kernel.LexicalTracker.remote_references(lexical)
-    IO.inspect({file, %{compile: compile, structs: structs, runtime: runtime}})
+    #IO.inspect({file, %{compile: compile, structs: structs, runtime: runtime}})
     :ets.insert(:found_deps, {file, structs ++ compile, structs ++ runtime})
   end
 end

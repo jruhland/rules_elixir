@@ -5,7 +5,7 @@ defmodule RulesElixir.Tools.ReadMix do
   load("@rules_elixir//impl:defs.bzl", "mix_project")
   """
 
-  def project_build_file(config, compiled_files) do
+  def project_build_file(config, targets_by_app) do
     cfg = Enum.into(config, %{})
     cwd = File.cwd!()
 
@@ -26,8 +26,9 @@ defmodule RulesElixir.Tools.ReadMix do
         deps_path: cfg.deps_path,
         deps_names: third_party_deps,                   
 	#apps_names: [to_string(cfg.app) | Enum.to_list(apps)],
-	apps_names: List.wrap(cfg.app) ++ Enum.into(apps, [], &to_string/1),
-        lib_targets: Enum.into(compiled_files, [], &Common.qualified_target/1),
+	#apps_names: List.wrap(cfg.app) ++ Enum.into(apps, [], &to_string/1),
+        #lib_targets: Enum.into(compiled_files, [], &Common.qualified_target/1),
+	apps_targets: targets_by_app,
         apps_path: Map.get(cfg, :apps_path, nil),
         build_path: ensure_relative(Mix.Project.build_path(config), cwd),
       ]

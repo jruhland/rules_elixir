@@ -5,7 +5,7 @@ defmodule StructB do
     belongs_to :parent_ref, StructA
   end
 
-  @reallyB StructA
+  # @reallyB StructA
 end
              
   

@@ -7,5 +7,5 @@ defmodule StructA do
   end
 
   # defstruct [a: nil, b: 4]
-  @really StructB
+  # @really StructB
 end

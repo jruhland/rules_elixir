@@ -22,6 +22,6 @@ fi
 # --- end runfiles.bash initialization ---
 #RUNFILES_LIB_DEBUG=1
 EXE="$BUILD_WORKSPACE_DIRECTORY/{elixir_tool}"
-echo "RUNNING $EXE"
-echo "{loadpath}" | tr ' ' '\n' | grep -v '^-pa$' | xargs ls -l
+# echo "RUNNING $EXE"
+# echo "{loadpath}" | tr ' ' '\n' | grep -v '^-pa$' | xargs ls -l
 $EXE elixir {loadpath} {srcs} $@

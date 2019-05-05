@@ -48,9 +48,14 @@ defmodule Mix.Tasks.Autodeps do
     Process.put(:build_path, Mix.Project.build_path(project))
 
     umbrella_target = Common.qualified_target(project_dir)
+    app = to_string(project[:app])
     Process.put(:third_party_target,
-      Common.qualified_target("#{project_dir}/#{to_string(project[:app])}_third_party")
+      Common.qualified_target("#{project_dir}/#{app}_third_party")
     )
+    Process.put(:config_target,
+      Common.qualified_target("#{project_dir}/config")
+    )
+
     Mix.Task.run("autodeps.recursive", Keyword.put(options, :umbrella, umbrella_target))
 
     generate_build_files(project_dir, options)
@@ -61,7 +66,6 @@ defmodule Mix.Tasks.Autodeps do
 	{to_string(app), Common.qualified_target(file)}
       end)
       |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
-      |> IO.inspect(label: "e")
 
     Mix.Project.config
     |> ReadMix.project_build_file(targets_by_app)
@@ -122,15 +126,20 @@ defmodule Mix.Tasks.Autodeps do
     Common.output_file(@build_file_boilerplate, "#{dir}/BUILD", opts)
   end
 
-  defp mix_dep_target(file) do
+  defp mix_dep_target(module, file) do
     buildpath = Process.get(:build_path)
     len = byte_size(buildpath)
-    
+
+    # Hack this for now
     case to_string(file) do
       <<prefix::binary-size(len), "/lib/", _rest::binary>> when prefix == buildpath ->
-	# Hack this for now
 	{:ok, Process.get(:third_party_target)}
-      _ -> :error
+      x when module == Application ->
+	{:ok, Process.get(:config_target)}
+      x when module == :application ->
+	{:ok, Process.get(:config_target)}
+      _ ->
+	:error
     end
   end
 
@@ -145,7 +154,7 @@ defmodule Mix.Tasks.Autodeps do
 	  with\
 	  true <- include_third_party?,
 	  {:file, f} <- :code.is_loaded(module),
-	  {:ok, target} <- mix_dep_target(f)
+	  {:ok, target} <- mix_dep_target(module, f)
 	    do [target]
 	    else _ -> []
 	  end

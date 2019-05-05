@@ -3,7 +3,7 @@ defmodule AppOne do
   #require Common.Macros
   require AppOne.Macros
 
-  @nothing IO.puts("compiling AppOne")
+  @nothing IO.inspect(Application.get_all_env(:app_one), label: "app one compile-time config")
 
   def hello do
     answer = Common.add(99, 14)

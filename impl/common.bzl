@@ -18,6 +18,11 @@ ElixirLibrary = provider(
         actual generated files so as not to create circular deps, since circular
         runtime dependencies between modules are very much allowed in Elixir.
         """,
+
+        "extra_sources":
+        """
+        huge hack for compile-time config
+        """,
     }
 )
 

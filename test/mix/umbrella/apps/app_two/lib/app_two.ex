@@ -12,6 +12,7 @@ defmodule AppTwo do
       :world
 
   """
+  @unused IO.inspect(:application.get_all_env(:app_two), label: "app two compile-time config")
   def hello do
     answer = Common.add(43, 14)
     IO.puts("app two; answer = #{answer}")

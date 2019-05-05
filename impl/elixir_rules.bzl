@@ -13,8 +13,10 @@ def elixir_compile(ctx, srcs, out, loadpath = []):
         outputs = [out],
         inputs = depset(direct = srcs, transitive = [loadpath]),
         arguments = [args],
-        env = {"HOME": ".",
-               "LANG": "en_US.UTF-8"}
+        env = {
+            "HOME": ".",
+            "LANG": "en_US.UTF-8",
+        },
     )
 
 _elixir_library_attrs = {
@@ -37,19 +39,25 @@ _elixir_library_attrs = {
 
 def _elixir_library_impl(ctx):
     ebin_dir = ctx.actions.declare_directory(ctx.label.name + "_ebin")
+    extra_sources = [
+        extra
+        for dep in ctx.attr.compile_deps
+        if hasattr(dep[ElixirLibrary], "extra_sources")
+        for extra in dep[ElixirLibrary].extra_sources
+    ]
+
     elixir_compile(
         ctx,
-        srcs = ctx.files.srcs,
+        srcs = extra_sources + ctx.files.srcs,
         loadpath = depset(transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.compile_deps]),
         out = ebin_dir,
     )
-    #print("direct runtime deps for", ctx.label.name, ctx.attr.runtime_deps) 
-    #print("Transitive runtime deps for", ctx.label.name, [(dep, dep[ElixirLibrary].runtime_deps) for dep in ctx.attr.runtime_deps])
+
     transitive_loadpath = depset(
         direct = [ebin_dir],
         transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.exported_deps],
     )
-    # print("Transitive loadpath for", ctx.label.name, transitive_loadpath)
+
     return [
         DefaultInfo(
             files = depset([ebin_dir]),

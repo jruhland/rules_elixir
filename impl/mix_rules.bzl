@@ -11,7 +11,8 @@ _mix_project_attrs = {
     "deps_names":     attr.string_list(),
     "apps_names":     attr.string_list(),
     "apps_mixfiles":  attr.label_list(allow_files = True),
-    "config_path":    attr.label(allow_single_file = True)
+    "config_path":    attr.label(allow_single_file = True),
+    "config_tree":    attr.label_list(allow_files = True),
 }
 
 # We will produce fragments of the final _build directory in multiple separate steps,
@@ -34,57 +35,41 @@ def declare_build_root(ctx):
     return (out_name, ctx.actions.declare_directory(out_name))
 
 # assumes that you have been passed _mix_project_attrs
-def invoke_elixir_for_mix(ctx,
-               extra_inputs = [],
-               **kwargs):
-    ctx.actions.run(
-        executable = ctx.executable._elixir_tool,
-        inputs = (
-            ctx.files.mixfile
-            + ctx.files.lockfile
-            + ctx.files.apps_mixfiles
-            + ctx.files.deps_tree
-            + extra_inputs
-        ),
-        env = {
-            # mix needs the home directory to find Hex and rebar3
-            "HOME": "/home/russell",
-            "LANG": "en_US.UTF-8",
-            "PATH": "/bin:/usr/bin:/usr/local/bin",
-        },
-        **kwargs
-    )
-
 def run_mix_task(ctx,
                extra_inputs = [],
                output_dir = None,
                extra_outputs = [],
                task = None,
-               args = [],
+               args = None,
+               extra_elixir_code = "",
                **kwargs):
     elixir_args = ctx.actions.args()
     elixir_args.add_all([
         "elixir", "-e",
         """
         dest = Path.absname("{out_dir}")
+        here = File.cwd!()
         File.cd!("{project_dir}")
         Mix.start
         Mix.CLI.main
+        File.cd!(here, fn -> {more} end)
+        # this is a hack in case we didn't produce output
+        if !File.exists?("{build_path}"), do: :erlang.halt(0)
         File.cd!("{build_path}")
         args = List.flatten ["-rL", File.ls!(), dest]
         0 = System.cmd("cp", args) |> elem(1)
-        # IO.puts(:os.cmd(to_charlist("find " <> dest)))
         """.format(
             project_dir = ctx.file.mixfile.dirname,
             build_path = ctx.attr.build_path,
             out_dir = output_dir.path,
+            more = extra_elixir_code,
         ),
         task,
     ])
 
     ctx.actions.run(
         executable = ctx.executable._elixir_tool,
-        arguments = [elixir_args, args],
+        arguments = [elixir_args, args or ctx.actions.args()],
         inputs = (
             ctx.files.mixfile
             + ctx.files.lockfile
@@ -101,7 +86,6 @@ def run_mix_task(ctx,
         },
         **kwargs
     )
-
 
 
 
@@ -250,7 +234,11 @@ def _elixir_merge_overlays_impl(ctx):
         ),
         BuildOverlay(
             structure = combined_structure,
-        )
+        ),
+        ElixirLibrary(
+            loadpath = depset([e.location for e in combined_structure]),
+            runtime_deps = depset([]),
+        ),
     ]
     
 
@@ -261,7 +249,7 @@ elixir_merge_overlays = rule(
 
 
 ################################################################
-# `elixir_compile_app` rule
+# `mix_compile_app` rule
 # step to invoke mix compile.app 
 _mix_compile_app_attrs = {
     "apps": attr.string_list(),
@@ -279,9 +267,11 @@ def _mix_compile_app_impl(ctx):
         for subdir in subdirs
     ]
     ebin_dirs = [e.location for e in structure]
+
     args = ctx.actions.args()
     args.add_all(["deps.loadpaths", "--no-deps-check", ",", "compile.app"])
     args.add_all(ctx.attr.apps)
+
     run_mix_task(
         ctx,
         output_dir = out_dir,
@@ -303,13 +293,49 @@ mix_compile_app = rule(
     attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items() + _mix_compile_app_attrs.items()),
 )
 
+################################################################
+# `mix_gen_config` rule
+# step to invoke mix compile.app and create dummy source file which
+# loads the configuration at compile-time.
+_mix_gen_config_attrs = {
+    "apps": attr.string_list(),
+}
 
-################################################################
-# SOURCES: the umbrella project compile_all target depends on the same target of all apps
-# CONFIG: each child app depends on the config of the umbrella
-# DEPS: each child app depends on the deps of the umbrella
-# the reason that we care at all is so that we can build child apps individually?
-################################################################
+def _mix_gen_config_impl(ctx):
+    out_name, out_dir = declare_build_root(ctx)
+    config_file = ctx.actions.declare_file(ctx.label.name + "/config_loader.exs")
+
+    run_mix_task(
+        ctx,
+        extra_inputs = ctx.files.config_tree,
+        output_dir = out_dir,
+        extra_outputs = [config_file],
+        task = "loadconfig",
+        extra_elixir_code = """
+        configs = 
+          for app <- [{apps}] do
+            {{app, :application.get_all_env(app)}}
+          end
+        File.write!("{config_file}", [":application.set_env ", inspect(configs, limit: :infinity)])
+        """.format(
+            config_file = config_file.path,
+            apps = ", ".join([":" + app for app in ctx.attr.apps])
+        )
+    )
+    return [
+        DefaultInfo(
+            files = depset([out_dir, config_file]),
+        ),
+        ElixirLibrary(
+            loadpath = depset([]),
+            extra_sources = [config_file],
+        ),
+    ]
+
+mix_gen_config = rule(
+    _mix_gen_config_impl,
+    attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items() + _mix_gen_config_attrs.items()),
+)
 
 def merge(d, **kwargs):
     return dict(kwargs, **d)
@@ -330,6 +356,7 @@ def mix_project(name = None,
         lockfile = "mix.lock",
         deps_tree = native.glob(["{}/**".format(deps_path)]),
         apps_mixfiles = native.glob(["{}/*/mix.exs".format(apps_path)]),
+        config_tree = native.glob(["**/config/*.exs"]),
         visibility = ["//visibility:public"],
     )
     third_party_target = name + "_third_party"
@@ -346,6 +373,12 @@ def mix_project(name = None,
     compile_app_target = name + "_compile_app"
     mix_compile_app(
         name = compile_app_target,
+        apps = apps_targets.keys(),
+        **mix_attrs
+    )
+    gen_config_target = "config"
+    mix_gen_config(
+        name = gen_config_target,
         apps = apps_targets.keys(),
         **mix_attrs
     )

@@ -41,7 +41,7 @@ def run_mix_task(ctx,
                extra_outputs = [],
                task = None,
                args = None,
-               extra_elixir_code = "",
+               extra_elixir_code = ":ok",
                **kwargs):
     elixir_args = ctx.actions.args()
     elixir_args.add_all([
@@ -56,7 +56,7 @@ def run_mix_task(ctx,
         # this is a hack in case we didn't produce output
         if !File.exists?("{build_path}"), do: :erlang.halt(0)
         File.cd!("{build_path}")
-        args = List.flatten ["-rL", File.ls!(), dest]
+        args = List.flatten ["-r", File.ls!(), dest]
         0 = System.cmd("cp", args) |> elem(1)
         """.format(
             project_dir = ctx.file.mixfile.dirname,
@@ -78,12 +78,7 @@ def run_mix_task(ctx,
             + extra_inputs
         ),
         outputs = [output_dir] + extra_outputs,
-        env = {
-            # mix needs the home directory to find Hex and rebar3
-            "HOME": "/home/russell",
-            "LANG": "en_US.UTF-8",
-            "PATH": "/bin:/usr/bin:/usr/local/bin",
-        },
+        use_default_shell_env = True,
         **kwargs
     )
 
@@ -223,7 +218,7 @@ def _elixir_merge_overlays_impl(ctx):
           REL=$OUT/$1 ; shift
           SRC=$1 ; shift
           mkdir -p $REL
-          cp -rL $SRC/* $REL
+          cp -r $SRC/* $REL
         done
         """
     )
@@ -376,7 +371,8 @@ def mix_project(name = None,
         apps = apps_targets.keys(),
         **mix_attrs
     )
-    gen_config_target = "config"
+
+    gen_config_target = name + "_config"
     mix_gen_config(
         name = gen_config_target,
         apps = apps_targets.keys(),

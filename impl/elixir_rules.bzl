@@ -12,11 +12,9 @@ def elixir_compile(ctx, srcs, out, loadpath = []):
         executable = ctx.executable._elixir_tool,
         outputs = [out],
         inputs = depset(direct = srcs, transitive = [loadpath]),
+        progress_message = "elixir_compile {}".format(", ".join([s.basename for s in srcs])),
         arguments = [args],
-        env = {
-            "HOME": ".",
-            "LANG": "en_US.UTF-8",
-        },
+        use_default_shell_env = True,
     )
 
 _elixir_library_attrs = {

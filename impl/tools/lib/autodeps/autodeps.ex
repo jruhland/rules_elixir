@@ -44,19 +44,20 @@ defmodule Mix.Tasks.Autodeps do
     {:ok, mixfile} = Common.active_mixfile()
     project_dir = Path.dirname(mixfile)
     project = Mix.Project.config
+    wsroot = Common.workspace_root
+    app = to_string(project[:app] || Path.basename(project_dir))
+
+    umbrella_target = if wsroot == project_dir do
+      "//:" <> app
+    else
+      Common.qualified_target(project_dir <> "/" <> app)
+    end
 
     Process.put(:build_path, Mix.Project.build_path(project))
+    Process.put(:third_party_target, umbrella_target <> "_third_party")
+    Process.put(:config_target, umbrella_target <> "_config")
 
-    umbrella_target = Common.qualified_target(project_dir)
-    app = to_string(project[:app])
-    Process.put(:third_party_target,
-      Common.qualified_target("#{project_dir}/#{app}_third_party")
-    )
-    Process.put(:config_target,
-      Common.qualified_target("#{project_dir}/config")
-    )
-
-    Mix.Task.run("autodeps.recursive", Keyword.put(options, :umbrella, umbrella_target))
+    Mix.Task.run("autodeps.recursive", options)
 
     generate_build_files(project_dir, options)
 
@@ -66,6 +67,7 @@ defmodule Mix.Tasks.Autodeps do
 	{to_string(app), Common.qualified_target(file)}
       end)
       |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+      |> Enum.map(fn {app, targets} -> {app, Enum.sort(targets)} end)
 
     Mix.Project.config
     |> ReadMix.project_build_file(targets_by_app)

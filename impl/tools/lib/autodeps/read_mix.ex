@@ -28,7 +28,9 @@ defmodule RulesElixir.Tools.ReadMix do
 	#apps_names: [to_string(cfg.app) | Enum.to_list(apps)],
 	#apps_names: List.wrap(cfg.app) ++ Enum.into(apps, [], &to_string/1),
         #lib_targets: Enum.into(compiled_files, [], &Common.qualified_target/1),
-	apps_targets: targets_by_app,
+	apps_targets: %Bazel.Map{kvs: Enum.map(targets_by_app, fn
+                                  {app, targets} -> {String.to_atom(app), targets}
+                                  end)},
         apps_path: Map.get(cfg, :apps_path, nil),
         build_path: ensure_relative(Mix.Project.build_path(config), cwd),
       ]

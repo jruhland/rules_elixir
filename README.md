@@ -14,8 +14,26 @@ brew install bazelbuild/tap/bazel
 ```
 
 ### First-time Setup
-Create a WORKSPACE file
-Build elixir itself:
+Create a WORKSPACE file e.g.
+```
+local_repository(
+    name = "rules_elixir",
+    path = "/Users/russell/src/rules_elixir/",
+)
+
+load("@rules_elixir//:deps.bzl", "elixir_rules_dependencies")
+
+elixir_rules_dependencies()
+```
+
+
+Build elixir itself (I don't know why you have to this separately but you do):
 ```
 bazel build @elixir//:elixir_lang
+```
+
+
+Run autodeps tool
+```
+$ bazel run @rules_elixir//impl/tools:autodeps
 ```

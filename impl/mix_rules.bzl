@@ -158,7 +158,6 @@ def _elixir_link1_impl(ctx):
         outputs = [out_dir, ebin_dir],
         arguments = [args],
         command = """
-        echo "args = $@"
         OUT=$1 ; shift
         cp $@ $OUT
         """

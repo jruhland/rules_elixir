@@ -49,15 +49,15 @@ defmodule Mix.Tasks.Autodeps do
     wsroot = Common.workspace_root
     app = to_string(project[:app] || Path.basename(project_dir))
 
-    umbrella_target = if wsroot == project_dir do
-      "//:" <> app
+    project_root_target = if wsroot == project_dir do
+      fn tgt -> "//:" <> tgt end
     else
-      Common.qualified_target(project_dir <> "/" <> app)
+      fn tgt -> Common.qualified_target(project_dir <> "/" <> tgt) end
     end
 
     Process.put(:build_path, Mix.Project.build_path(project))
-    Process.put(:third_party_target, umbrella_target <> "_third_party")
-    Process.put(:config_target, umbrella_target <> "_config")
+    Process.put(:third_party_target, project_root_target.("third_party"))
+    Process.put(:config_target, project_root_target.("config"))
 
     Mix.Task.run("autodeps.recursive", options)
 

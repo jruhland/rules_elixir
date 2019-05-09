@@ -353,7 +353,7 @@ def mix_project(name = None,
         config_tree = native.glob(["**/config/*.exs"]),
         visibility = ["//visibility:public"],
     )
-    third_party_target = name + "_third_party"
+    third_party_target = "third_party"
     mix_third_party_deps(name = third_party_target, **mix_attrs)
 
     for app, targets in apps_targets.items():
@@ -364,14 +364,14 @@ def mix_project(name = None,
             **mix_attrs
         )
         
-    compile_app_target = name + "_compile_app"
+    compile_app_target = "compile_app"
     mix_compile_app(
         name = compile_app_target,
         apps = apps_targets.keys(),
         **mix_attrs
     )
 
-    gen_config_target = name + "_config"
+    gen_config_target = "config"
     mix_gen_config(
         name = gen_config_target,
         apps = apps_targets.keys(),
@@ -379,7 +379,7 @@ def mix_project(name = None,
     )
 
     elixir_merge_overlays(
-        name = name + "_merged",
+        name = "all",
         overlays = [third_party_target, compile_app_target] + [link_target(app) for app in apps_targets.keys()],
         **mix_attrs
     )

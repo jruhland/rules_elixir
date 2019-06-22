@@ -9,7 +9,7 @@ defmodule AppOne.MixProject do
       config_path: "../../config/config.exs",
       deps_path: "../../deps",
       lockfile: "../../mix.lock",
-      elixir: "~> 1.9-dev",
+      elixir: "~> 1.8",
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]

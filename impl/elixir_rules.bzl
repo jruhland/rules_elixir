@@ -110,8 +110,8 @@ def _elixir_script_impl(ctx):
         output = ctx.outputs.executable,
         substitutions = {
             "{elixir_tool}": ctx.executable._elixir_tool.path,
-            "{loadpath}":    " ".join(["-pa {}".format(_rlocation(ctx, f)) for f in lib_runfiles.files]),
-            "{srcs}":        " ".join([_rlocation(ctx, f) for f in src_runfiles.files]),
+            "{loadpath}":    " ".join(["-pa {}".format(_rlocation(ctx, f)) for f in lib_runfiles.files.to_list()]),
+            "{srcs}":        " ".join([_rlocation(ctx, f) for f in src_runfiles.files.to_list()]),
         },
         is_executable = True,
     )

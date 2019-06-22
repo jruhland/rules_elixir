@@ -22,6 +22,7 @@ fi
 # --- end runfiles.bash initialization ---
 #RUNFILES_LIB_DEBUG=1
 # WINDOWS MANIFEST FILE INCLUDES WORKSPACE...
+export LC_ALL="en_US.UTF-8"
 exec $(rlocation elixir/bin)/$1 "${@:2}"
 # REAL SYMLINKS DON'T?
 

@@ -4,15 +4,20 @@ load(":common.bzl", "ElixirLibrary", "elixir_common_attrs")
 # some of these are computed in the `mix_project` macro (so we can glob)
 _mix_project_attrs = {
     "mixfile":        attr.label(allow_single_file = ["mix.exs"]),
-    "lockfile":       attr.label(allow_single_file = ["mix.lock"]),        
+    "lockfile":       attr.label(allow_single_file = ["mix.lock"]),
     "mix_env":        attr.string(),
     "build_path":     attr.string(),
-    "deps_tree":      attr.label_list(allow_files = True),
-    "deps_names":     attr.string_list(),
+
+    "external_projects": attr.string_dict(),
+    # todo remove this and pass explicitly?
+    "external_tree":     attr.label_list(allow_files = True),
+
     "apps_names":     attr.string_list(),
     "apps_mixfiles":  attr.label_list(allow_files = True),
     "config_path":    attr.label(allow_single_file = True),
     "config_tree":    attr.label_list(allow_files = True),
+    "_mix_runner_template": attr.label(allow_single_file = True,
+                                       default = Label("@rules_elixir//impl:mix_runner_template.exs")),
 }
 
 # We will produce fragments of the final _build directory in multiple separate steps,
@@ -36,34 +41,29 @@ def declare_build_root(ctx):
 
 # assumes that you have been passed _mix_project_attrs
 def run_mix_task(ctx,
-               extra_inputs = [],
-               output_dir = None,
-               extra_outputs = [],
-               task = None,
-               args = None,
-               extra_elixir_code = ":ok",
-               **kwargs):
+                 inputs = [],
+                 output_dir = None,
+                 extra_outputs = [],
+                 task = None,
+                 args = None,
+                 extra_elixir_code = ":noop",
+                 **kwargs):
+    mix_runner = ctx.actions.declare_file("{}/mix_{}_runner.exs".format(output_dir.path, task))
+    ctx.actions.expand_template(
+        template = ctx.file._mix_runner_template,
+        output = mix_runner,
+        substitutions = {
+            "{project_dir}": ctx.file.mixfile.dirname,
+            "{build_path}": ctx.attr.build_path,
+            "{out_dir}": output_dir.path,
+            "{more}": extra_elixir_code,
+        }
+    )
+
     elixir_args = ctx.actions.args()
     elixir_args.add_all([
-        "elixir", "-e",
-        """
-        dest = Path.absname("{out_dir}")
-        here = File.cwd!()
-        File.cd!("{project_dir}")
-        Mix.start
-        Mix.CLI.main
-        File.cd!(here, fn -> {more} end)
-        # this is a hack in case we didn't produce output
-        if !File.exists?("{build_path}"), do: :erlang.halt(0)
-        File.cd!("{build_path}")
-        args = List.flatten ["-r", File.ls!(), dest]
-        0 = System.cmd("cp", args) |> elem(1)
-        """.format(
-            project_dir = ctx.file.mixfile.dirname,
-            build_path = ctx.attr.build_path,
-            out_dir = output_dir.path,
-            more = extra_elixir_code,
-        ),
+        "elixir",
+        mix_runner.path,
         task,
     ])
 
@@ -71,28 +71,32 @@ def run_mix_task(ctx,
         executable = ctx.executable._elixir_tool,
         arguments = [elixir_args, args or ctx.actions.args()],
         inputs = (
-            ctx.files.mixfile
+            [mix_runner]
+            + ctx.files.mixfile
             + ctx.files.lockfile
             + ctx.files.apps_mixfiles
-            + ctx.files.deps_tree
-            + extra_inputs
+            + inputs
         ),
         outputs = [output_dir] + extra_outputs,
         use_default_shell_env = True,
         **kwargs
     )
 
-
-
 ################################################################
-# `mix_third_party_deps` rule
-# compile ALL third_party deps as a single unit
-# simpler to implement and avoids duplicate work if one dep depends on another
-def _mix_third_party_deps_impl(ctx):
+# `_mix_deps_compile` rule
+# Invokes mix to compile a list of external dependencies, specified by name
+
+_mix_deps_compile_attrs = {
+    "group_name": attr.string(),
+    "deps_to_compile": attr.string_list(),
+    "input_tree": attr.label_list(allow_files = True),
+}
+
+def _mix_deps_compile_impl(ctx):
     out_name, out_dir = declare_build_root(ctx)
 
     # declare the structure of our generated _build directory and create the actual files
-    subdirs = [ebin_for_app(dep) for dep in ctx.attr.deps_names]
+    subdirs = [ebin_for_app(dep) for dep in ctx.attr.deps_to_compile]
     structure = [
         struct(
             relative = subdir,
@@ -101,13 +105,17 @@ def _mix_third_party_deps_impl(ctx):
         for subdir in subdirs
     ]
     ebin_dirs = [e.location for e in structure]
-
+    print("mix deps compile etree", ctx.files.external_tree)
     args = ctx.actions.args()
-    args.add_all(ctx.attr.deps_names)
+    args.add_all(ctx.attr.deps_to_compile)
     run_mix_task(
         ctx,
-        progress_message = "Compiling {} third-party Mix dependencies".format(len(ctx.attr.deps_names)),
+        progress_message = "Compiling {n} dependency projects in group {group}".format(
+            n = len(ctx.attr.deps_to_compile),
+            group = ctx.attr.group_name,
+        ),
         output_dir = out_dir,
+        inputs = ctx.files.input_tree,
         extra_outputs = ebin_dirs,
         task = "deps.compile",
         args = args,
@@ -120,7 +128,6 @@ def _mix_third_party_deps_impl(ctx):
             runtime_deps = depset([]),
         ),
         BuildOverlay(
-            # root_dir = out_dir,
             structure = structure,
         ),
         DefaultInfo(
@@ -128,10 +135,11 @@ def _mix_third_party_deps_impl(ctx):
         )
     ]
 
-mix_third_party_deps = rule(
-    _mix_third_party_deps_impl,
-    attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items()),
+mix_deps_compile = rule(
+    _mix_deps_compile_impl,
+    attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items() + _mix_deps_compile_attrs.items()),
 )
+
 
 ################################################################
 # `elixir_link1` rule
@@ -269,6 +277,8 @@ def _mix_compile_app_impl(ctx):
     run_mix_task(
         ctx,
         output_dir = out_dir,
+        # TODO do we need this?
+        inputs = ctx.files.external_tree,
         extra_outputs = ebin_dirs,
         task = "do",
         args = args,
@@ -301,10 +311,11 @@ def _mix_gen_config_impl(ctx):
 
     run_mix_task(
         ctx,
-        extra_inputs = ctx.files.config_tree,
+        inputs = ctx.files.external_tree + ctx.files.config_tree,
         output_dir = out_dir,
         extra_outputs = [config_file],
         task = "loadconfig",
+        progress_message = "Loading static configuration",
         extra_elixir_code = """
         configs = 
           for app <- [{apps}] do
@@ -337,9 +348,13 @@ def merge(d, **kwargs):
 def link_target(app):
     return app + "_link"
 
+def external_group_target(group):
+    return "external_" + group
+
 def mix_project(name = None,
                 deps_path = None,
                 apps_path = None,
+                external_projects = {},
                 apps_targets = {},
                 mix_env = None,
                 **kwargs):
@@ -348,13 +363,34 @@ def mix_project(name = None,
         kwargs,
         mixfile = "mix.exs",
         lockfile = "mix.lock",
-        deps_tree = native.glob(["{}/**".format(deps_path)]),
+        external_tree = native.glob(["{}/**".format(path) for (dep, path) in external_projects.items()]),
         apps_mixfiles = native.glob(["{}/*/mix.exs".format(apps_path)]),
         config_tree = native.glob(["**/config/*.exs"]),
         visibility = ["//visibility:public"],
     )
+
+    # collect external deps into groups so we don't always recompile everything
+    external_groups = {}
+    for dep, path in external_projects.items():
+        (group, subpath) = path.split("/", 1)
+        if group not in external_groups:
+            external_groups[group] = []
+        external_groups[group] += [struct(name = dep, path = path)]
+
+    for (group, deps) in external_groups.items():
+        mix_deps_compile(name = external_group_target(group),
+                         group_name = group,
+                         deps_to_compile = [dep.name for dep in deps],
+                         input_tree = native.glob(["{}/**".format(dep.path) for dep in deps]),
+                         **mix_attrs
+        )
+
     third_party_target = "third_party"
-    mix_third_party_deps(name = third_party_target, **mix_attrs)
+    elixir_merge_overlays(
+        name = third_party_target,
+        overlays = [external_group_target(group) for (group, deps) in external_groups.items()],
+        **mix_attrs
+    )
 
     for app, targets in apps_targets.items():
         elixir_link1(
@@ -363,7 +399,7 @@ def mix_project(name = None,
             libs = targets,
             **mix_attrs
         )
-        
+
     compile_app_target = "compile_app"
     mix_compile_app(
         name = compile_app_target,

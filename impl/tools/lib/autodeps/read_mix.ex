@@ -6,16 +6,30 @@ defmodule RulesElixir.Tools.ReadMix do
   """
 
   def project_build_file(config, targets_by_app) do
-    cfg = Enum.into(config, %{})
+    cfg = %{deps_path: deps_path} = Enum.into(config, %{})
     cwd = File.cwd!()
 
     apps = in_umbrella_deps(config)
 
-    third_party_deps =
-      config
-      |> all_deps_names
-      |> MapSet.difference(apps)
-      |> Enum.map(&to_string/1)
+    deps =
+      Mix.Dep.load_and_cache
+      |> Enum.map(fn %Mix.Dep{app: app, scm: scm, opts: opts} ->
+        if opts[:from_umbrella] do
+          nil
+        else
+          case ensure_relative(opts[:dest], File.cwd!) do
+            nil -> IO.warn("dependency #{app} comes from #{opts[:dest]} which is outside current directory")
+            relpath -> {app, relpath}
+          end
+        end
+      end)
+      |> Enum.filter(&!is_nil(&1))
+      |> Enum.sort_by(fn {app, path} ->
+        case Path.split(path) do
+          [^deps_path | more] -> {1, more}
+          other -> {0, other}
+        end
+      end)
 
     %Bazel.Rule{
       rule: "mix_project",
@@ -23,12 +37,8 @@ defmodule RulesElixir.Tools.ReadMix do
         name: to_string(cfg.app || Path.basename(cwd)),
         mix_env: to_string(Mix.env),
         config_path: cfg.config_path,
-        deps_path: cfg.deps_path,
-        deps_names: third_party_deps,                   
-	#apps_names: [to_string(cfg.app) | Enum.to_list(apps)],
-	#apps_names: List.wrap(cfg.app) ++ Enum.into(apps, [], &to_string/1),
-        #lib_targets: Enum.into(compiled_files, [], &Common.qualified_target/1),
-	apps_targets: %Bazel.Map{kvs: Enum.map(targets_by_app, fn
+        external_projects: %Bazel.Map{kvs: deps},
+        apps_targets: %Bazel.Map{kvs: Enum.map(targets_by_app, fn
                                   {app, targets} -> {String.to_atom(app), targets}
                                   end)},
         apps_path: Map.get(cfg, :apps_path, nil),
@@ -45,10 +55,6 @@ defmodule RulesElixir.Tools.ReadMix do
     end
   end
   
-  defp all_deps_names(config) do
-    config |> Mix.Project.deps_paths |> Map.keys |> MapSet.new
-  end
-
   defp in_umbrella_deps(config) do
     case Mix.Project.apps_paths(config) do
       nil -> MapSet.new

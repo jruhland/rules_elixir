@@ -1,8 +1,8 @@
 defmodule AppTwoTest do
   use ExUnit.Case
-  doctest AppTwo
 
-  test "greets the world" do
-    assert AppTwo.hello() == :world
+  test "does the right action" do
+    assert :mock = AppTwo.run_action
   end
+  
 end

@@ -5,12 +5,6 @@ defmodule AppTwo do
 
   @doc """
   Hello world.
-
-  ## Examples
-
-      iex> AppTwo.hello()
-      :world
-
   """
   @unused IO.inspect(:application.get_all_env(:app_two), label: "app two compile-time config")
   def hello do
@@ -20,4 +14,10 @@ defmodule AppTwo do
     IO.puts("runtime only says: #{inspect(OnlyRuntime.hello)}")
     {"text extensions", :mimerl.mime_to_exts("text/plain")}
   end
+
+  @action_provider Application.get_env(:app_two, :action_provider)
+  def run_action do
+    @action_provider.exec
+  end
+
 end

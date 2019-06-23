@@ -47,7 +47,6 @@ defmodule Mix.Tasks.Autodeps do
     project_dir = Path.dirname(mixfile)
     project = Mix.Project.config
     wsroot = Common.workspace_root
-    app = to_string(project[:app] || Path.basename(project_dir))
 
     project_root_target = if wsroot == project_dir do
       fn tgt -> "//:" <> tgt end
@@ -66,13 +65,13 @@ defmodule Mix.Tasks.Autodeps do
     targets_by_app =
       :ets.match(:file_to_app, :"$1")
       |> Enum.map(fn [{file, app}] ->
-	{to_string(app), Common.qualified_target(file)}
+	{app, Common.qualified_target(file)}
       end)
       |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
       |> Enum.map(fn {app, targets} -> {app, Enum.sort(targets)} end)
 
     Mix.Project.config
-    |> ReadMix.project_build_file(targets_by_app)
+    |> ReadMix.project_build_file(apps_targets: %Bazel.Map{kvs: targets_by_app})
     |> write_generated_file(@load_mix_rules, project_dir, options)
 
   end
@@ -155,9 +154,9 @@ defmodule Mix.Tasks.Autodeps do
     case to_string(file) do
       <<prefix::binary-size(len), "/lib/", _rest::binary>> when prefix == buildpath ->
 	{:ok, Process.get(:third_party_target)}
-      x when module == Application ->
+      _ when module == Application ->
 	{:ok, Process.get(:config_target)}
-      x when module == :application ->
+      _ when module == :application ->
 	{:ok, Process.get(:config_target)}
       _ ->
 	:error

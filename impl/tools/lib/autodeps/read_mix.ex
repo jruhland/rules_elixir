@@ -1,30 +1,24 @@
 defmodule RulesElixir.Tools.ReadMix do
-  alias RulesElixir.Tools.{Bazel, Common}
+  alias RulesElixir.Tools.Bazel
 
-  @load_mix_rules """
-  load("@rules_elixir//impl:defs.bzl", "mix_project")
-  """
-
-  def project_build_file(config, targets_by_app) do
+  def project_build_file(config, extra_params) do
     cfg = %{deps_path: deps_path} = Enum.into(config, %{})
     cwd = File.cwd!()
 
-    apps = in_umbrella_deps(config)
-
     deps =
       Mix.Dep.load_and_cache
-      |> Enum.map(fn %Mix.Dep{app: app, scm: scm, opts: opts} ->
+      |> Enum.map(fn %Mix.Dep{app: app, opts: opts} ->
         if opts[:from_umbrella] do
           nil
         else
-          case ensure_relative(opts[:dest], File.cwd!) do
+          case ensure_relative(opts[:dest], cwd) do
             nil -> IO.warn("dependency #{app} comes from #{opts[:dest]} which is outside current directory")
             relpath -> {app, relpath}
           end
         end
       end)
       |> Enum.filter(&!is_nil(&1))
-      |> Enum.sort_by(fn {app, path} ->
+      |> Enum.sort_by(fn {_app, path} ->
         case Path.split(path) do
           [^deps_path | more] -> {1, more}
           other -> {0, other}
@@ -37,13 +31,10 @@ defmodule RulesElixir.Tools.ReadMix do
         name: to_string(cfg.app || Path.basename(cwd)),
         mix_env: to_string(Mix.env),
         config_path: cfg.config_path,
-        external_projects: %Bazel.Map{kvs: deps},
-        apps_targets: %Bazel.Map{kvs: Enum.map(targets_by_app, fn
-                                  {app, targets} -> {String.to_atom(app), targets}
-                                  end)},
-        apps_path: Map.get(cfg, :apps_path, nil),
         build_path: ensure_relative(Mix.Project.build_path(config), cwd),
-      ]
+        apps_path: Map.get(cfg, :apps_path, nil),
+        external_projects: %Bazel.Map{kvs: deps},
+      ] ++ extra_params
     }
 
   end
@@ -55,12 +46,5 @@ defmodule RulesElixir.Tools.ReadMix do
     end
   end
   
-  defp in_umbrella_deps(config) do
-    case Mix.Project.apps_paths(config) do
-      nil -> MapSet.new
-      paths -> MapSet.new(Map.keys(paths))
-    end
-  end
-
 end
 

@@ -307,7 +307,7 @@ _mix_gen_config_attrs = {
 
 def _mix_gen_config_impl(ctx):
     out_name, out_dir = declare_build_root(ctx)
-    config_file = ctx.actions.declare_file(ctx.label.name + "/config_loader.exs")
+    config_file = ctx.actions.declare_file("config_loader.exs")
 
     run_mix_task(
         ctx,
@@ -410,7 +410,7 @@ def mix_project(name = None,
     gen_config_target = "config"
     mix_gen_config(
         name = gen_config_target,
-        apps = apps_targets.keys(),
+        apps = apps_targets.keys() + external_projects.keys(),
         **mix_attrs
     )
 

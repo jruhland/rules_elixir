@@ -1,6 +1,5 @@
 defmodule Mix.Tasks.Autodeps.Recursive do
   use Mix.Task
-  alias RulesElixir.Tools.{Common, Bazel, ReadMix}
 
   @recursive true
   @moduledoc """
@@ -60,8 +59,7 @@ defmodule Mix.Tasks.Autodeps.Recursive do
   end
 
   defp each_file(file, lexical) do
-    out = {compile, structs, runtime} = Kernel.LexicalTracker.remote_references(lexical)
-    #IO.inspect({file, %{compile: compile, structs: structs, runtime: runtime}})
+    {compile, structs, runtime} = Kernel.LexicalTracker.remote_references(lexical)
     :ets.insert(:found_deps, {file, structs ++ compile, structs ++ runtime})
   end
 end

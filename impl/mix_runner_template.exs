@@ -1,4 +1,6 @@
-IO.puts("mix runner script!")
+IO.inspect(System.argv, label: "mix runner script args")
+IO.inspect(System.get_env(), label: "mix runner script env")
+
 dest = Path.absname("{out_dir}")
 here = File.cwd!()
 File.cd!("{project_dir}")

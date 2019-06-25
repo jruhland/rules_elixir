@@ -30,32 +30,96 @@ BuildOverlay = provider(
     }
 )
 
-# helper to compute application ebin directories within the build directory
-def ebin_for_app(app):
-    return "lib/{}/ebin".format(app)
-
 # assumes that you have been passed _mix_project_attrs
 def declare_build_root(ctx):
     out_name = ctx.label.name + "/" + ctx.attr.build_path
     return (out_name, ctx.actions.declare_directory(out_name))
 
+################################################################
+# `elixir_merge_overlays` rule
+# "Linker" step where we combine multiple BuildOverlays into a single
+
+_elixir_merge_overlays_attrs = {
+    "overlays": attr.label_list(),
+}
+
+def overlay_entry_args(entry):
+    return [entry.relative, entry.location.path]
+
+def do_merge_overlays(ctx, deps, out_dir):
+    combined_structure = [
+        entry
+        for dep in deps
+        for entry in dep[BuildOverlay].structure
+    ]
+    args = ctx.actions.args()
+    args.add(out_dir.path)
+    args.add_all(combined_structure, map_each = overlay_entry_args)
+    ctx.actions.run_shell(
+        inputs = [e.location for e in combined_structure],
+        outputs = [out_dir],
+        arguments = [args],
+        command = """
+        OUT=$1 ; shift
+        while (($#)); do
+          REL=$OUT/$1 ; shift
+          SRC=$1 ; shift
+          mkdir -p $REL
+          cp -r $SRC/* $REL
+        done
+        """
+    )
+
+    return [
+        DefaultInfo(
+            files = depset([out_dir]),
+        ),
+        BuildOverlay(
+            structure = combined_structure,
+        ),
+        ElixirLibrary(
+            loadpath = depset([e.location for e in combined_structure]),
+            runtime_deps = depset([]),
+        ),
+    ]
+    
+def _elixir_merge_overlays_impl(ctx):
+    out_name, out_dir = declare_build_root(ctx)
+    return do_merge_overlays(ctx, ctx.attr.overlays, out_dir)
+
+elixir_merge_overlays = rule(
+    _elixir_merge_overlays_impl,
+    attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items() + _elixir_merge_overlays_attrs.items()),
+)
+
 # assumes that you have been passed _mix_project_attrs
 def run_mix_task(ctx,
                  inputs = [],
+                 deps = [],
                  output_dir = None,
                  extra_outputs = [],
                  task = None,
                  args = None,
                  extra_elixir_code = ":noop",
                  **kwargs):
+
+    merged_overlays_dir = ctx.actions.declare_directory(
+        "{}/{}_merged_deps".format(
+            ctx.label.name,
+            ctx.attr.build_path
+            )
+    )
+    merged_overlays = do_merge_overlays(ctx, deps, merged_overlays_dir)
+    
     mix_runner = ctx.actions.declare_file("{}/mix_{}_runner.exs".format(output_dir.path, task))
     ctx.actions.expand_template(
         template = ctx.file._mix_runner_template,
         output = mix_runner,
         substitutions = {
-            "{project_dir}": ctx.file.mixfile.dirname,
-            "{build_path}": ctx.attr.build_path,
             "{out_dir}": output_dir.path,
+            "{project_dir}": ctx.file.mixfile.dirname,
+            "{deps_dir}": merged_overlays_dir.path,
+            "{build_path}": ctx.attr.build_path,
             "{more}": extra_elixir_code,
         }
     )
@@ -71,7 +135,7 @@ def run_mix_task(ctx,
         executable = ctx.executable._elixir_tool,
         arguments = [elixir_args, args or ctx.actions.args()],
         inputs = (
-            [mix_runner]
+            [mix_runner, merged_overlays_dir]
             + ctx.files.mixfile
             + ctx.files.lockfile
             + ctx.files.apps_mixfiles
@@ -90,7 +154,12 @@ _mix_deps_compile_attrs = {
     "group_name": attr.string(),
     "deps_to_compile": attr.string_list(),
     "input_tree": attr.label_list(allow_files = True),
+    "deps": attr.label_list(),
 }
+
+# helper to compute application ebin directories within the build directory
+def ebin_for_app(app):
+    return "lib/{}/ebin".format(app)
 
 def _mix_deps_compile_impl(ctx):
     out_name, out_dir = declare_build_root(ctx)
@@ -105,7 +174,6 @@ def _mix_deps_compile_impl(ctx):
         for subdir in subdirs
     ]
     ebin_dirs = [e.location for e in structure]
-    print("mix deps compile etree", ctx.files.external_tree)
     args = ctx.actions.args()
     args.add_all(ctx.attr.deps_to_compile)
     run_mix_task(
@@ -116,6 +184,7 @@ def _mix_deps_compile_impl(ctx):
         ),
         output_dir = out_dir,
         inputs = ctx.files.input_tree,
+        deps = ctx.attr.deps,
         extra_outputs = ebin_dirs,
         task = "deps.compile",
         args = args,
@@ -192,61 +261,6 @@ def _elixir_link1_impl(ctx):
 elixir_link1 = rule(
     _elixir_link1_impl,
     attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items() + _elixir_link1_attrs.items()),
-)
-
-################################################################
-# `elixir_merge_overlays` rule
-# "Linker" step where we combine multiple BuildOverlays into a single
-
-_elixir_merge_overlays_attrs = {
-    "overlays": attr.label_list(),
-}
-
-def overlay_entry_args(entry):
-    return [entry.relative, entry.location.path]
-
-def _elixir_merge_overlays_impl(ctx):
-    out_name, out_dir = declare_build_root(ctx)
-    combined_structure = [
-        entry
-        for overlay in ctx.attr.overlays
-        for entry in overlay[BuildOverlay].structure
-    ]
-    args = ctx.actions.args()
-    args.add(out_dir.path)
-    args.add_all(combined_structure, map_each = overlay_entry_args)
-    ctx.actions.run_shell(
-        inputs = [e.location for e in combined_structure],
-        outputs = [out_dir],
-        arguments = [args],
-        command = """
-        OUT=$1 ; shift
-        while (($#)); do
-          REL=$OUT/$1 ; shift
-          SRC=$1 ; shift
-          mkdir -p $REL
-          cp -r $SRC/* $REL
-        done
-        """
-    )
-
-    return [
-        DefaultInfo(
-            files = depset([out_dir]),
-        ),
-        BuildOverlay(
-            structure = combined_structure,
-        ),
-        ElixirLibrary(
-            loadpath = depset([e.location for e in combined_structure]),
-            runtime_deps = depset([]),
-        ),
-    ]
-    
-
-elixir_merge_overlays = rule(
-    _elixir_merge_overlays_impl,
-    attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items() + _elixir_merge_overlays_attrs.items()),
 )
 
 
@@ -352,7 +366,6 @@ def external_group_target(group):
     return "external_" + group
 
 def mix_project(name = None,
-                deps_path = None,
                 apps_path = None,
                 external_projects = {},
                 apps_targets = {},
@@ -377,13 +390,25 @@ def mix_project(name = None,
             external_groups[group] = []
         external_groups[group] += [struct(name = dep, path = path)]
 
+    deps_group = external_group_target("deps")
+    mix_deps_compile(
+        name = deps_group,
+        group_name = "deps",
+        deps_to_compile = [dep.name for dep in external_groups["deps"]],
+        input_tree = native.glob(["{}/**".format(dep.path) for dep in external_groups["deps"]]),
+        **mix_attrs
+    )
+    
     for (group, deps) in external_groups.items():
-        mix_deps_compile(name = external_group_target(group),
-                         group_name = group,
-                         deps_to_compile = [dep.name for dep in deps],
-                         input_tree = native.glob(["{}/**".format(dep.path) for dep in deps]),
-                         **mix_attrs
-        )
+        if group != "deps":
+            mix_deps_compile(
+                name = external_group_target(group),
+                deps = [deps_group],
+                group_name = group,
+                deps_to_compile = [dep.name for dep in deps],
+                input_tree = native.glob(["{}/**".format(dep.path) for dep in deps]),
+                **mix_attrs
+            )
 
     third_party_target = "third_party"
     elixir_merge_overlays(

@@ -13,8 +13,9 @@ defmodule Mix.Tasks.Autodeps.Recursive do
 
     Mix.Project.get!()
 
-    Mix.Task.run("loadpaths")
-    Mix.Task.run("loadconfig")
+    #Mix.Task.run("loadpaths")
+    #Mix.Task.run("loadconfig")
+
     project = Mix.Project.config()
 
     IO.puts("RECURSIVE #{inspect(project[:app])} #{inspect opts}")
@@ -33,10 +34,13 @@ defmodule Mix.Tasks.Autodeps.Recursive do
     compile_path = Mix.Project.compile_path(project)
     # We need to create this directory and add it to the load path so that
     # `Application.app_dir` works
+
+    File.rm_rf(compile_path)
     File.mkdir_p!(compile_path)
     Code.prepend_path(compile_path)
+    #IO.inspect(compile_path, label: "compile_path")
 
-    Code.compiler_options(ignore_module_conflict: true)
+    #Code.compiler_options(ignore_module_conflict: true)
     Kernel.ParallelCompiler.compile(
       Enum.to_list(all_paths),
       each_file: &each_file/2,

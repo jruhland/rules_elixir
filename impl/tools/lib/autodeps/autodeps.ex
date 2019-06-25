@@ -31,6 +31,7 @@ defmodule Mix.Tasks.Autodeps do
     options = parse_args(args)
     Mix.Project.get!()
 
+
     # Tuples {file, compile_dep_modules, runtime_dep_modules}
     :ets.new(:found_deps, [:set, :public, :named_table, {:write_concurrency, true}])
 
@@ -45,7 +46,7 @@ defmodule Mix.Tasks.Autodeps do
 
     {:ok, mixfile} = Common.active_mixfile()
     project_dir = Path.dirname(mixfile)
-    project = Mix.Project.config
+    config = Mix.Project.config
     wsroot = Common.workspace_root
 
     project_root_target = if wsroot == project_dir do
@@ -54,10 +55,22 @@ defmodule Mix.Tasks.Autodeps do
       fn tgt -> Common.qualified_target(project_dir <> "/" <> tgt) end
     end
 
-    Process.put(:build_path, Mix.Project.build_path(project))
+    Process.put(:build_path, Mix.Project.build_path(config))
     Process.put(:third_party_target, project_root_target.("third_party"))
     Process.put(:config_target, project_root_target.("config"))
 
+    Mix.Task.run("loadconfig")
+
+    umbrella_deps = Enum.into(Mix.Dep.Umbrella.unloaded(), %MapSet{}, fn dep -> dep.app end)
+
+    external_deps =
+      config
+      |> Mix.Project.deps_paths
+      |> Map.keys
+      |> Enum.filter(fn app -> not MapSet.member?(umbrella_deps, app) end)
+      |> Enum.map(&to_string/1)
+
+    Mix.Task.run("deps.compile", external_deps)
     Mix.Task.run("autodeps.recursive", options)
 
     generate_build_files(project_dir, options)
@@ -70,7 +83,7 @@ defmodule Mix.Tasks.Autodeps do
       |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
       |> Enum.map(fn {app, targets} -> {app, Enum.sort(targets)} end)
 
-    Mix.Project.config
+    config
     |> ReadMix.project_build_file(apps_targets: %Bazel.Map{kvs: targets_by_app})
     |> write_generated_file(@load_mix_rules, project_dir, options)
 

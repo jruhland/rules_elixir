@@ -14,13 +14,7 @@ def elixir_compile(ctx, srcs, out, loadpath = []):
         inputs = depset(direct = srcs, transitive = [loadpath]),
         progress_message = "elixir_compile {}".format(", ".join([s.basename for s in srcs])),
         arguments = [args],
-        env = {
-            "HOME": "/home/russell",
-            "PATH": "/usr/bin",
-            "MIX_ENV": "test",
-        },
-
-        # use_default_shell_env = True,
+        use_default_shell_env = True,
     )
 
 _elixir_library_attrs = {
@@ -163,12 +157,12 @@ def elixir_script(name = None, **kwargs):
         deps = ["@bazel_tools//tools/bash/runfiles", "@elixir//:elixir_tool_lib"],
         srcs = [runner],
         visibility = ["//visibility:public"],
+        data =  ["@elixir//:elixir_tool"],
     )
 
 def elixir_test(name = None, **kwargs):
     runner = name + "_test_runner"
     elixir_script_runner(name = runner, **kwargs)
-    print(kwargs["srcs"])
     native.sh_test(
         name = name,
         deps = ["@bazel_tools//tools/bash/runfiles", "@elixir//:elixir_tool_lib"],

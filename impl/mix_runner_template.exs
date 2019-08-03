@@ -1,8 +1,15 @@
 dest = Path.absname("{out_dir}")
 here = File.cwd!()
+IO.puts("STARTED @ #{here}")
+#:os.cmd('find .') |> IO.puts
+IO.puts("deps_dir {deps_dir}")
+IO.puts("project_dir {project_dir}")
+:os.cmd(to_charlist("ls {deps_dir}")) |> IO.puts
+# 0 = System.cmd("cp", ["-r", "{deps_dir}/*", "{project_dir}"]) |> elem(1)
 File.cd!("{project_dir}")
-:os.cmd('find .') |> IO.puts
-0 = System.cmd("cp", ["-r", "{deps_dir}", "."]) |> elem(1)
+IO.puts("CHANGED TO {project_dir}")
+#:os.cmd('find .') |> IO.puts
+
 Mix.start
 Mix.CLI.main
 File.cd!(here, fn -> {more} end)

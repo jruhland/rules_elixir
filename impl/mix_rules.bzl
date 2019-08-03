@@ -55,12 +55,18 @@ def do_merge_overlays(ctx, deps, out_dir):
     args = ctx.actions.args()
     args.add(out_dir.path)
     args.add_all(combined_structure, map_each = overlay_entry_args)
+    print("inputs for merge = ",  [e.location for e in combined_structure])
     ctx.actions.run_shell(
         inputs = [e.location for e in combined_structure],
         outputs = [out_dir],
         arguments = [args],
         command = """
+        echo "i do not understand you"
+        echo "DO MERGE OVERLAYS $@"
+        echo 'really?'
         OUT=$1 ; shift
+        mkdir -p $OUT
+        touch $OUT/dummy
         while (($#)); do
           REL=$OUT/$1 ; shift
           SRC=$1 ; shift
@@ -109,6 +115,7 @@ def run_mix_task(ctx,
             ctx.attr.build_path
             )
     )
+    print("merged overlays", merged_overlays_dir)
     merged_overlays = do_merge_overlays(ctx, deps, merged_overlays_dir)
     
     mix_runner = ctx.actions.declare_file("{}/mix_{}_runner.exs".format(output_dir.path, task))
@@ -237,6 +244,7 @@ def _elixir_link1_impl(ctx):
         outputs = [out_dir, ebin_dir],
         arguments = [args],
         command = """
+        echo "ELIXIR LINK1 $@"
         OUT=$1 ; shift
         cp $@ $OUT
         """
@@ -388,64 +396,31 @@ def mix_project(name = None,
         visibility = ["//visibility:public"],
     )
 
-    umbrella_deps = {}
-    for (app, info) in deps_graph.items():
-        if "in_umbrella" in info:
-            umbrella_deps[app] = True
-            for dep in info["deps"]:
-                umbrella_deps[dep] = True
-
-    for (dep_app, info) in deps_graph.items():
-        if dep_app in umbrella_deps:
-            #input_globs = ["{}/**".format(deps_graph[d]["path"]) for d in [dep_app] + info["deps"] if d in deps_graph]
-            input_globs = [
-                "{}/**".format(deps_graph[d]["path"])
-                for d in info["inputs"]
-            ]
-            inputs = native.glob(input_globs)
-
-            mix_deps_compile(
-                name = external_dep_target(dep_app),
-                group_name = dep_app,
-                deps = [external_dep_target(d) for d in info["deps"] if d in umbrella_deps],
-                deps_to_compile = [dep_app],
-                input_tree = inputs,
-                #provided = info["deps"],
-                **mix_attrs
-            )
-
-    # collect external deps into groups so we don't always recompile everything
-    external_groups = {}
-    for dep, path in external_projects.items():
-        (group, subpath) = path.split("/", 1)
-        if group not in external_groups:
-            external_groups[group] = []
-        external_groups[group] += [struct(name = dep, path = path)]
-
-    deps_group = external_group_target("deps")
-    mix_deps_compile(
-        name = deps_group,
-        group_name = "deps",
-        deps_to_compile = [dep.name for dep in external_groups["deps"]],
-        input_tree = native.glob(["{}/**".format(dep.path) for dep in external_groups["deps"]]),
-        **mix_attrs
-    )
     
-    for (group, deps) in external_groups.items():
-        if group != "deps":
-            mix_deps_compile(
-                name = external_group_target(group),
-                deps = [deps_group],
-                group_name = group,
-                deps_to_compile = [dep.name for dep in deps],
-                input_tree = native.glob(["{}/**".format(dep.path) for dep in deps]),
-                **mix_attrs
-            )
+    print(mix_attrs)
+    deps_targets = []
+    for (dep_app, info) in deps_graph.items():
+        input_globs = [
+            "{}/**".format(deps_graph[d]["path"])
+                for d in info["inputs"]
+        ]
+        inputs = native.glob(input_globs)
+
+        deps_targets += [external_dep_target(dep_app)]
+        mix_deps_compile(
+            name = external_dep_target(dep_app),
+            group_name = dep_app,
+            deps = [external_dep_target(d) for d in info["deps"]],
+            deps_to_compile = [dep_app],
+            input_tree = inputs,
+            #provided = info["deps"],
+            **mix_attrs
+        )
 
     third_party_target = "third_party"
     elixir_merge_overlays(
         name = third_party_target,
-        overlays = [external_group_target(group) for (group, deps) in external_groups.items()],
+        overlays = deps_targets,
         **mix_attrs
     )
 
@@ -472,7 +447,7 @@ def mix_project(name = None,
     )
 
     elixir_merge_overlays(
-        name = "all",
+        name = "project",
         overlays = [third_party_target, compile_app_target] + [link_target(app) for app in apps_targets.keys()],
         **mix_attrs
     )

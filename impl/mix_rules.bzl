@@ -155,6 +155,7 @@ _mix_deps_compile_attrs = {
     "deps_to_compile": attr.string_list(),
     "input_tree": attr.label_list(allow_files = True),
     "deps": attr.label_list(),
+    "provided": attr.string_list(default = []),
 }
 
 # helper to compute application ebin directories within the build directory
@@ -165,7 +166,7 @@ def _mix_deps_compile_impl(ctx):
     out_name, out_dir = declare_build_root(ctx)
 
     # declare the structure of our generated _build directory and create the actual files
-    subdirs = [ebin_for_app(dep) for dep in ctx.attr.deps_to_compile]
+    subdirs = [ebin_for_app(dep) for dep in ctx.attr.deps_to_compile + ctx.attr.provided]
     structure = [
         struct(
             relative = subdir,
@@ -175,6 +176,7 @@ def _mix_deps_compile_impl(ctx):
     ]
     ebin_dirs = [e.location for e in structure]
     args = ctx.actions.args()
+    # args.add("--no-deps-check")
     args.add_all(ctx.attr.deps_to_compile)
     run_mix_task(
         ctx,
@@ -365,9 +367,13 @@ def link_target(app):
 def external_group_target(group):
     return "external_" + group
 
+def external_dep_target(dep_name):
+    return "external_dep_" + dep_name
+
 def mix_project(name = None,
                 apps_path = None,
                 external_projects = {},
+                deps_graph = {},
                 apps_targets = {},
                 mix_env = None,
                 **kwargs):
@@ -381,6 +387,32 @@ def mix_project(name = None,
         config_tree = native.glob(["**/config/*.exs"]),
         visibility = ["//visibility:public"],
     )
+
+    umbrella_deps = {}
+    for (app, info) in deps_graph.items():
+        if "in_umbrella" in info:
+            umbrella_deps[app] = True
+            for dep in info["deps"]:
+                umbrella_deps[dep] = True
+
+    for (dep_app, info) in deps_graph.items():
+        if dep_app in umbrella_deps:
+            #input_globs = ["{}/**".format(deps_graph[d]["path"]) for d in [dep_app] + info["deps"] if d in deps_graph]
+            input_globs = [
+                "{}/**".format(deps_graph[d]["path"])
+                for d in info["inputs"]
+            ]
+            inputs = native.glob(input_globs)
+
+            mix_deps_compile(
+                name = external_dep_target(dep_app),
+                group_name = dep_app,
+                deps = [external_dep_target(d) for d in info["deps"] if d in umbrella_deps],
+                deps_to_compile = [dep_app],
+                input_tree = inputs,
+                #provided = info["deps"],
+                **mix_attrs
+            )
 
     # collect external deps into groups so we don't always recompile everything
     external_groups = {}

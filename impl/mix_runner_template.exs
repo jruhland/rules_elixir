@@ -1,6 +1,7 @@
 dest = Path.absname("{out_dir}")
 here = File.cwd!()
 File.cd!("{project_dir}")
+:os.cmd('find .') |> IO.puts
 0 = System.cmd("cp", ["-r", "{deps_dir}", "."]) |> elem(1)
 Mix.start
 Mix.CLI.main

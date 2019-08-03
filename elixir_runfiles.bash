@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # --- begin runfiles.bash initialization ---
 # Copy-pasted from Bazel's Bash runfiles library (tools/bash/runfiles/runfiles.bash).
-set -euo pipefail
+set -euox pipefail
 if [[ ! -d "${RUNFILES_DIR:-/dev/null}" && ! -f "${RUNFILES_MANIFEST_FILE:-/dev/null}" ]]; then
     if [[ -f "$0.runfiles_manifest" ]]; then
         export RUNFILES_MANIFEST_FILE="$0.runfiles_manifest"
@@ -23,4 +23,5 @@ fi
 # --- end runfiles.bash initialization ---
 #RUNFILES_LIB_DEBUG=1
 export LC_ALL="C.UTF-8"
-exec $(rlocation elixir/bin)/$1 "${@:2}"
+#exec $(rlocation elixir/bin)/$1 "${@:2}"
+$(rlocation elixir/bin)/$1 "${@:2}"  2>&1

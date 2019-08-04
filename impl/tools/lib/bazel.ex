@@ -27,6 +27,7 @@ defmodule RulesElixir.Tools.Bazel do
       %Call{}  -> call_doc(e.func, e.args, opts)
       m when is_map(m) -> map_doc(m, opts)
       b when is_binary(b) -> b
+      b when is_boolean(b) -> b
       a when is_atom(a) -> A.to_doc(to_string(a), opts)
       e -> A.to_doc(e, opts)
     end

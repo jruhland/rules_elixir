@@ -57,7 +57,8 @@ defmodule RulesElixir.Tools.ReadMix do
                path: rel_path,
                deps: deps_names,
                inputs: transitive_deps(deps_map, app) |> Stream.uniq |> Stream.map(&to_string/1) |> Enum.sort,
-               in_umbrella: dep.opts[:from_umbrella]
+               in_umbrella: dep.opts[:from_umbrella],
+	       top_level: dep.top_level
              }}
         end
       end)

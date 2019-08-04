@@ -55,15 +55,14 @@ def do_merge_overlays(ctx, deps, out_dir):
     args = ctx.actions.args()
     args.add(out_dir.path)
     args.add_all(combined_structure, map_each = overlay_entry_args)
-    print("inputs for merge = ",  [e.location for e in combined_structure])
     ctx.actions.run_shell(
         inputs = [e.location for e in combined_structure],
         outputs = [out_dir],
         arguments = [args],
         command = """
-        echo "i do not understand you"
+        set -e
         echo "DO MERGE OVERLAYS $@"
-        echo 'really?'
+        # find .
         OUT=$1 ; shift
         mkdir -p $OUT
         touch $OUT/dummy
@@ -71,6 +70,7 @@ def do_merge_overlays(ctx, deps, out_dir):
           REL=$OUT/$1 ; shift
           SRC=$1 ; shift
           mkdir -p $REL
+          # echo "DOING COPY $SRC * to $REL"
           cp -r $SRC/* $REL
         done
         """
@@ -115,7 +115,6 @@ def run_mix_task(ctx,
             ctx.attr.build_path
             )
     )
-    print("merged overlays", merged_overlays_dir)
     merged_overlays = do_merge_overlays(ctx, deps, merged_overlays_dir)
     
     mix_runner = ctx.actions.declare_file("{}/mix_{}_runner.exs".format(output_dir.path, task))
@@ -170,20 +169,26 @@ def ebin_for_app(app):
     return "lib/{}/ebin".format(app)
 
 def _mix_deps_compile_impl(ctx):
-    out_name, out_dir = declare_build_root(ctx)
+    #out_name, out_dir = declare_build_root(ctx)
+    out_name = ctx.label.name + "_compile"
+    out_dir = ctx.actions.declare_directory(out_name)
 
     # declare the structure of our generated _build directory and create the actual files
-    subdirs = [ebin_for_app(dep) for dep in ctx.attr.deps_to_compile + ctx.attr.provided]
+    subdirs = [ebin_for_app(dep) for dep in ctx.attr.deps_to_compile ] # + ctx.attr.provided]
+    #subdirs = [ebin_for_app(dep) for dep in ctx.attr.provided]
     structure = [
         struct(
             relative = subdir,
-            location = ctx.actions.declare_directory("{}/{}".format(out_name, subdir))
+            location = ctx.actions.declare_directory("{}/{}/{}".format(out_name, ctx.attr.build_path, subdir))
         )
         for subdir in subdirs
     ]
+    print("MIX DEPS", ctx.label, "COMPILE DEPS", ctx.attr.deps)
+    print("MIX DEPS", ctx.label, "STRUCTURE", structure)
     ebin_dirs = [e.location for e in structure]
     args = ctx.actions.args()
     # args.add("--no-deps-check")
+    args.add_all(["deps.tree", ",", "deps.compile"])
     args.add_all(ctx.attr.deps_to_compile)
     run_mix_task(
         ctx,
@@ -195,7 +200,7 @@ def _mix_deps_compile_impl(ctx):
         inputs = ctx.files.input_tree,
         deps = ctx.attr.deps,
         extra_outputs = ebin_dirs,
-        task = "deps.compile",
+        task = "do",
         args = args,
     )
 
@@ -282,13 +287,15 @@ _mix_compile_app_attrs = {
 }
 
 def _mix_compile_app_impl(ctx):
-    out_name, out_dir = declare_build_root(ctx)
+    #out_name, out_dir = declare_build_root(ctx)
+    out_name = ctx.label.name + "_compile_app"
+    out_dir = ctx.actions.declare_directory(out_name)
 
     subdirs = [ebin_for_app(app) for app in ctx.attr.apps]
     structure = [
         struct(
             relative = subdir,
-            location = ctx.actions.declare_directory("{}/{}".format(out_name, subdir))
+            location = ctx.actions.declare_directory("{}/{}/{}".format(out_name, ctx.attr.build_path, subdir))
         )
         for subdir in subdirs
     ]
@@ -378,6 +385,11 @@ def external_group_target(group):
 def external_dep_target(dep_name):
     return "external_dep_" + dep_name
 
+def all_build_files(external_projects):
+    return native.glob(["{}/{}".format(path, build_file)
+                        for (_, path) in external_projects.items()
+                        for build_file in ["mix.exs", "rebar.config"]])
+
 def mix_project(name = None,
                 apps_path = None,
                 external_projects = {},
@@ -396,26 +408,28 @@ def mix_project(name = None,
         visibility = ["//visibility:public"],
     )
 
-    
-    print(mix_attrs)
     deps_targets = []
     for (dep_app, info) in deps_graph.items():
-        input_globs = [
-            "{}/**".format(deps_graph[d]["path"])
+        if info["top_level"] == "true":
+            input_globs = [
+                "{}/**".format(deps_graph[d]["path"])
                 for d in info["inputs"]
-        ]
-        inputs = native.glob(input_globs)
-
-        deps_targets += [external_dep_target(dep_app)]
-        mix_deps_compile(
-            name = external_dep_target(dep_app),
-            group_name = dep_app,
-            deps = [external_dep_target(d) for d in info["deps"]],
-            deps_to_compile = [dep_app],
-            input_tree = inputs,
-            #provided = info["deps"],
-            **mix_attrs
-        )
+            ]
+            deps_mixfiles = all_build_files(external_projects)
+            #print("DEPS_MIXFILES", deps_mixfiles)
+            inputs = depset(deps_mixfiles + native.glob(input_globs))
+            print(dep_app, "INPUTS", info["inputs"])
+            deps_targets += [external_dep_target(dep_app)]
+            mix_deps_compile(
+                name = external_dep_target(dep_app),
+                group_name = dep_app,
+                deps = [external_dep_target(d) for d in info["deps"] if deps_graph[d]["top_level"] == "true"],
+                deps_to_compile = info["inputs"],
+                input_tree = inputs,
+                #provided = info["deps"],
+                provided = [dep_app],
+                **mix_attrs
+            )
 
     third_party_target = "third_party"
     elixir_merge_overlays(

@@ -183,8 +183,6 @@ def _mix_deps_compile_impl(ctx):
         )
         for subdir in subdirs
     ]
-    print("MIX DEPS", ctx.label, "COMPILE DEPS", ctx.attr.deps)
-    print("MIX DEPS", ctx.label, "STRUCTURE", structure)
     ebin_dirs = [e.location for e in structure]
     args = ctx.actions.args()
     # args.add("--no-deps-check")
@@ -416,9 +414,7 @@ def mix_project(name = None,
                 for d in info["inputs"]
             ]
             deps_mixfiles = all_build_files(external_projects)
-            #print("DEPS_MIXFILES", deps_mixfiles)
             inputs = depset(deps_mixfiles + native.glob(input_globs))
-            print(dep_app, "INPUTS", info["inputs"])
             deps_targets += [external_dep_target(dep_app)]
             mix_deps_compile(
                 name = external_dep_target(dep_app),
@@ -426,7 +422,6 @@ def mix_project(name = None,
                 deps = [external_dep_target(d) for d in info["deps"] if deps_graph[d]["top_level"] == "true"],
                 deps_to_compile = info["inputs"],
                 input_tree = inputs,
-                #provided = info["deps"],
                 provided = [dep_app],
                 **mix_attrs
             )

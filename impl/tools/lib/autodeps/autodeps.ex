@@ -165,8 +165,10 @@ defmodule Mix.Tasks.Autodeps do
 
     # Hack this for now
     case to_string(file) do
-      <<prefix::binary-size(len), "/lib/", _rest::binary>> when prefix == buildpath ->
+      <<prefix::binary-size(len), "/lib/", rest::binary>> when prefix == buildpath ->
+	IO.puts("HACK THIS FOR NOW?? #{rest}")
 	{:ok, Process.get(:third_party_target)}
+	# {:ok, "external_dep_#{rest |> Path.split |> List.first}"}
       _ when module == Application ->
 	{:ok, Process.get(:config_target)}
       _ when module == :application ->

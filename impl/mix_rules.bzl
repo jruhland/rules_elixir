@@ -46,11 +46,12 @@ _elixir_merge_overlays_attrs = {
 def overlay_entry_args(entry):
     return [entry.relative, entry.location.path]
 
-def do_merge_overlays(ctx, deps, out_dir):
+def do_merge_overlays(ctx, deps, out_dir, only=None):
     combined_structure = [
         entry
         for dep in deps
         for entry in dep[BuildOverlay].structure
+        if (not only) or dep[BuildOverlay].app_name in only
     ]
     args = ctx.actions.args()
     args.add(out_dir.path)
@@ -161,7 +162,7 @@ _mix_deps_compile_attrs = {
     "deps_to_compile": attr.string_list(),
     "input_tree": attr.label_list(allow_files = True),
     "deps": attr.label_list(),
-    "provided": attr.string_list(default = []),
+    #"provided": attr.string_list(default = []),
 }
 
 # helper to compute application ebin directories within the build directory
@@ -174,14 +175,13 @@ def _mix_deps_compile_impl(ctx):
     out_dir = ctx.actions.declare_directory(out_name)
 
     # declare the structure of our generated _build directory and create the actual files
-    subdirs = [ebin_for_app(dep) for dep in ctx.attr.deps_to_compile ] # + ctx.attr.provided]
-    #subdirs = [ebin_for_app(dep) for dep in ctx.attr.provided]
     structure = [
         struct(
-            relative = subdir,
-            location = ctx.actions.declare_directory("{}/{}/{}".format(out_name, ctx.attr.build_path, subdir))
+            app_name = dep,
+            relative = ebin_for_app(dep),
+            location = ctx.actions.declare_directory("{}/{}/{}".format(out_name, ctx.attr.build_path, ebin_for_app(dep)))
         )
-        for subdir in subdirs
+        for dep in ctx.attr.deps_to_compile
     ]
     ebin_dirs = [e.location for e in structure]
     args = ctx.actions.args()
@@ -289,13 +289,13 @@ def _mix_compile_app_impl(ctx):
     out_name = ctx.label.name + "_compile_app"
     out_dir = ctx.actions.declare_directory(out_name)
 
-    subdirs = [ebin_for_app(app) for app in ctx.attr.apps]
     structure = [
         struct(
-            relative = subdir,
-            location = ctx.actions.declare_directory("{}/{}/{}".format(out_name, ctx.attr.build_path, subdir))
+            app_name = app,
+            relative = ebin_for_app(app),
+            location = ctx.actions.declare_directory("{}/{}/{}".format(out_name, ctx.attr.build_path, ebin_for_app(app)))
         )
-        for subdir in subdirs
+        for app in ctx.attr.apps
     ]
     ebin_dirs = [e.location for e in structure]
 
@@ -406,25 +406,49 @@ def mix_project(name = None,
         visibility = ["//visibility:public"],
     )
 
+    # I can't figure out how to get the deps.compile step to compile indirect deps (deps of deps) by themselves.
+    # But, they do get compiled when we compile the direct deps that depend on them.
+    provided_deps = {}
+    for (dep_app, info) in deps_graph.items():
+        if info["top_level"] == "true":
+            for d in info["inputs"]:
+                if deps_graph[d]["top_level"] == "false" and not (d in provided_deps):
+                    provided_deps[d] = dep_app
+
+    print("PROVIDED DEPS", provided_deps.items())
     deps_targets = []
     for (dep_app, info) in deps_graph.items():
         if info["top_level"] == "true":
+            provided_by_others = dict([(d, provided_deps[d])
+                                       for d in info["inputs"]
+                                       if d != dep_app and d in provided_deps and provided_deps[d] != dep_app])
+            print(dep_app, "PROVIDED BY OTHERS", provided_by_others)
+            unique_provider_deps = dict([(d, True) for (_, d) in provided_by_others.items()]).keys()
             input_globs = [
                 "{}/**".format(deps_graph[d]["path"])
                 for d in info["inputs"]
+                #if d not in provided_by_others
             ]
+            print(dep_app, "input_globs", input_globs)
             deps_mixfiles = all_build_files(external_projects)
             inputs = depset(deps_mixfiles + native.glob(input_globs))
             deps_targets += [external_dep_target(dep_app)]
             mix_deps_compile(
                 name = external_dep_target(dep_app),
                 group_name = dep_app,
-                deps = [external_dep_target(d) for d in info["deps"] if deps_graph[d]["top_level"] == "true"],
+                deps = [external_dep_target(d) for d in info["deps"] if deps_graph[d]["top_level"] == "true"], # + [external_dep_target(d) for d in unique_provider_deps],
                 deps_to_compile = info["inputs"],
                 input_tree = inputs,
-                provided = [dep_app],
                 **mix_attrs
             )
+        else:
+            elixir_link1(
+                name = external_dep_target(dep_app),
+                app_name = dep_app,
+                libs = [external_dep_target(provided_deps[dep_app])],
+                **mix_attrs
+            )
+    
 
     third_party_target = "third_party"
     elixir_merge_overlays(

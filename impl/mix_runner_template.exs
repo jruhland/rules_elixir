@@ -6,7 +6,7 @@ File.cd!("{project_dir}")
 
 Mix.start
 # Mix.debug(true)
-ret = Mix.CLI.main
+Mix.CLI.main
 File.cd!(here, fn -> {more} end)
 
 # this is a hack in case we didn't produce output

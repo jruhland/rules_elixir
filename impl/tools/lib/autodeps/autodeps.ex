@@ -132,15 +132,14 @@ defmodule Mix.Tasks.Autodeps do
 
   defp elixir_library_attrs(file, compile_deps, runtime_deps) do
     basename = Path.basename(file)
-    defines_macros? = not Enum.empty?(:ets.lookup(:file_info, file))
-    runtime_deps = modules_to_targets(file, runtime_deps)
-
+    defines_macros? = List.first(:ets.lookup(:file_info, file))
+    # If we define macros, then our dependents will need ALL of our runtime deps
+    exported_deps = defines_macros? && modules_to_targets(file, runtime_deps, include_third_party: true)
     [
       name: Path.rootname(basename),
       srcs: [basename],
       compile_deps: modules_to_targets(file, compile_deps, include_third_party: true),
-      #runtime_deps: runtime_deps,
-      exported_deps: (if defines_macros?, do: runtime_deps, else: nil),
+      exported_deps: exported_deps,
       visibility: ["//visibility:public"],
     ]
   end
@@ -167,19 +166,25 @@ defmodule Mix.Tasks.Autodeps do
     case to_string(file) do
       <<prefix::binary-size(len), "/lib/", rest::binary>> when prefix == buildpath ->
 	IO.puts("HACK THIS FOR NOW?? #{rest}")
-	{:ok, Process.get(:third_party_target)}
-	# {:ok, "external_dep_#{rest |> Path.split |> List.first}"}
+	# {:ok, Process.get(:third_party_target)}
+	{:ok, "external_dep_#{rest |> Path.split |> List.first}"}
       _ when module == Application ->
 	{:ok, Process.get(:config_target)}
       _ when module == :application ->
 	{:ok, Process.get(:config_target)}
       _ ->
+	#IO.puts("!!! ERROR #{module}")
+	# this should be Elixir standard internal modules
 	:error
     end
   end
 
   defp modules_to_targets(file, modules, opts \\ []) do
     include_third_party? = Keyword.get(opts, :include_third_party, false)
+    if String.contains?(file, "app_one") do
+      IO.inspect({:modules_to_targets, file, include_third_party?, modules})
+      IO.puts("")
+    end
     modules
     |> Enum.flat_map(fn module ->
 

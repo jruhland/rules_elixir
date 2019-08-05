@@ -15,6 +15,7 @@ defmodule AppOne do
     IO.puts("v = #{inspect(v)}")
     enc = Jason.encode(Enum.to_list(1..10))
     IO.inspect(CommonLibrary.hello, label: "common library says")
+    IO.inspect(%ExampleSchema{}, label: "example ecto schema")
     enc
   end
 end

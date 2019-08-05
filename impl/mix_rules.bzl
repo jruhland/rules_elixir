@@ -26,7 +26,7 @@ BuildOverlay = provider(
     doc = "Provider for a directory which mirrors the Mix _build structure",
     fields = {
         # "root_dir": "(File) the actual build directory, e.g. .../_build/dev",
-        "structure": "(list<struct<relative: string, location: File>>) each logical subdirectory of the root and its real location",
+        "structure": "(list<struct<app_name: string, relative: string, location: File>>) each logical subdirectory of the root and its real location",
     }
 )
 
@@ -37,21 +37,22 @@ def declare_build_root(ctx):
 
 ################################################################
 # `elixir_merge_overlays` rule
-# "Linker" step where we combine multiple BuildOverlays into a single
+# "Linker" step where we combine one or more BuildOverlays into a single BuildOverlay
 
 _elixir_merge_overlays_attrs = {
-    "overlays": attr.label_list(),
+    "overlays": attr.label_list(), # The overlays to merge
+    "only": attr.string_list(default = []), # If non-empty, only this list of apps will be linked 
 }
 
 def overlay_entry_args(entry):
     return [entry.relative, entry.location.path]
 
-def do_merge_overlays(ctx, deps, out_dir, only=None):
+def do_merge_overlays(ctx, deps, out_dir, only=[]):
     combined_structure = [
         entry
         for dep in deps
         for entry in dep[BuildOverlay].structure
-        if (not only) or dep[BuildOverlay].app_name in only
+        if (0 == len(only)) or entry.app_name in only
     ]
     args = ctx.actions.args()
     args.add(out_dir.path)
@@ -62,8 +63,6 @@ def do_merge_overlays(ctx, deps, out_dir, only=None):
         arguments = [args],
         command = """
         set -e
-        echo "DO MERGE OVERLAYS $@"
-        # find .
         OUT=$1 ; shift
         mkdir -p $OUT
         touch $OUT/dummy
@@ -71,7 +70,6 @@ def do_merge_overlays(ctx, deps, out_dir, only=None):
           REL=$OUT/$1 ; shift
           SRC=$1 ; shift
           mkdir -p $REL
-          # echo "DOING COPY $SRC * to $REL"
           cp -r $SRC/* $REL
         done
         """
@@ -92,11 +90,13 @@ def do_merge_overlays(ctx, deps, out_dir, only=None):
     
 def _elixir_merge_overlays_impl(ctx):
     out_name, out_dir = declare_build_root(ctx)
-    return do_merge_overlays(ctx, ctx.attr.overlays, out_dir)
+    return do_merge_overlays(ctx, ctx.attr.overlays, out_dir, only=ctx.attr.only)
 
 elixir_merge_overlays = rule(
     _elixir_merge_overlays_impl,
-    attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items() + _elixir_merge_overlays_attrs.items()),
+    attrs = dict(elixir_common_attrs.items()
+                 + _mix_project_attrs.items()
+                 + _elixir_merge_overlays_attrs.items()),
 )
 
 # assumes that you have been passed _mix_project_attrs
@@ -186,19 +186,20 @@ def _mix_deps_compile_impl(ctx):
     ebin_dirs = [e.location for e in structure]
     args = ctx.actions.args()
     # args.add("--no-deps-check")
-    args.add_all(["deps.tree", ",", "deps.compile"])
+    #args.add_all(["deps.tree", ",", "deps.compile"])
     args.add_all(ctx.attr.deps_to_compile)
     run_mix_task(
         ctx,
         progress_message = "Compiling {n} dependency projects in group {group}".format(
-            n = len(ctx.attr.deps_to_compile),
+            #n = len(ctx.attr.deps_to_compile),
+            n = ctx.attr.deps_to_compile,
             group = ctx.attr.group_name,
         ),
         output_dir = out_dir,
         inputs = ctx.files.input_tree,
         deps = ctx.attr.deps,
         extra_outputs = ebin_dirs,
-        task = "do",
+        task = "deps.compile",
         args = args,
     )
 
@@ -247,7 +248,6 @@ def _elixir_link1_impl(ctx):
         outputs = [out_dir, ebin_dir],
         arguments = [args],
         command = """
-        echo "ELIXIR LINK1 $@"
         OUT=$1 ; shift
         cp $@ $OUT
         """
@@ -307,7 +307,7 @@ def _mix_compile_app_impl(ctx):
         ctx,
         output_dir = out_dir,
         # TODO do we need this?
-        inputs = ctx.files.external_tree,
+        # inputs = ctx.files.external_tree,
         extra_outputs = ebin_dirs,
         task = "do",
         args = args,
@@ -340,7 +340,8 @@ def _mix_gen_config_impl(ctx):
 
     run_mix_task(
         ctx,
-        inputs = ctx.files.external_tree + ctx.files.config_tree,
+        #inputs = ctx.files.external_tree + ctx.files.config_tree,
+        inputs = ctx.files.config_tree,
         output_dir = out_dir,
         extra_outputs = [config_file],
         task = "loadconfig",
@@ -388,6 +389,8 @@ def all_build_files(external_projects):
                         for (_, path) in external_projects.items()
                         for build_file in ["mix.exs", "rebar.config"]])
 
+# The mix_project macro is responsible for understanding project-level information produced by autodeps (see read_mix.ex).
+# Basically dependencies and configuration.  It has to be a macro because this is where we do all of the globs, and rules can't glob
 def mix_project(name = None,
                 apps_path = None,
                 external_projects = {},
@@ -400,7 +403,8 @@ def mix_project(name = None,
         kwargs,
         mixfile = "mix.exs",
         lockfile = "mix.lock",
-        external_tree = native.glob(["{}/**".format(path) for (dep, path) in external_projects.items()]),
+        # external_tree = native.glob(["{}/**".format(path) for (dep, path) in external_projects.items()]),
+        external_tree = [],
         apps_mixfiles = native.glob(["{}/*/mix.exs".format(apps_path)]),
         config_tree = native.glob(["**/config/*.exs"]),
         visibility = ["//visibility:public"],
@@ -408,55 +412,49 @@ def mix_project(name = None,
 
     # I can't figure out how to get the deps.compile step to compile indirect deps (deps of deps) by themselves.
     # But, they do get compiled when we compile the direct deps that depend on them.
+    # So if we keep track of which direct dep "provides" each indirect dep, then we can create targets that refer
+    # to every dep, which is important so that source files can depend on only the deps that they need. 
     provided_deps = {}
     for (dep_app, info) in deps_graph.items():
-        if info["top_level"] == "true":
+        if info["top_level"] and (not info["in_umbrella"]):
             for d in info["inputs"]:
-                if deps_graph[d]["top_level"] == "false" and not (d in provided_deps):
+                if (not deps_graph[d]["top_level"]) and not (d in provided_deps):
                     provided_deps[d] = dep_app
 
-    print("PROVIDED DEPS", provided_deps.items())
     deps_targets = []
     for (dep_app, info) in deps_graph.items():
-        if info["top_level"] == "true":
-            provided_by_others = dict([(d, provided_deps[d])
-                                       for d in info["inputs"]
-                                       if d != dep_app and d in provided_deps and provided_deps[d] != dep_app])
-            print(dep_app, "PROVIDED BY OTHERS", provided_by_others)
-            unique_provider_deps = dict([(d, True) for (_, d) in provided_by_others.items()]).keys()
+        if info["top_level"] and (not info["in_umbrella"]):
+            # Note that if two direct dependencies both depend on the same indirect dependency, that
+            # indirect dependency may be compiled twice.
             input_globs = [
                 "{}/**".format(deps_graph[d]["path"])
                 for d in info["inputs"]
-                #if d not in provided_by_others
             ]
-            print(dep_app, "input_globs", input_globs)
             deps_mixfiles = all_build_files(external_projects)
-            inputs = depset(deps_mixfiles + native.glob(input_globs))
+            inputs = depset(deps_mixfiles + native.glob(input_globs)) # This depset is a hack to remove duplicates
             deps_targets += [external_dep_target(dep_app)]
             mix_deps_compile(
                 name = external_dep_target(dep_app),
                 group_name = dep_app,
-                deps = [external_dep_target(d) for d in info["deps"] if deps_graph[d]["top_level"] == "true"], # + [external_dep_target(d) for d in unique_provider_deps],
+                deps = [external_dep_target(d) for d in info["deps"] if deps_graph[d]["top_level"]],
+
+                # For some reason Mix does not like it when you ask it to just compile `dep_app` here.
+                # It complains that the transitive deps have the wrong environment, but if you tell it
+                # to compile all the transitive deps at once, then it's fine...
                 deps_to_compile = info["inputs"],
+
                 input_tree = inputs,
                 **mix_attrs
             )
-        else:
-            elixir_link1(
+        elif not info["in_umbrella"]:
+            elixir_merge_overlays(
                 name = external_dep_target(dep_app),
-                app_name = dep_app,
-                libs = [external_dep_target(provided_deps[dep_app])],
+                overlays = [external_dep_target(provided_deps[dep_app])],
+                only = [dep_app],
                 **mix_attrs
             )
-    
 
-    third_party_target = "third_party"
-    elixir_merge_overlays(
-        name = third_party_target,
-        overlays = deps_targets,
-        **mix_attrs
-    )
-
+    # Each app in the umbrella gets its own link target
     for app, targets in apps_targets.items():
         elixir_link1(
             name = link_target(app),
@@ -472,6 +470,7 @@ def mix_project(name = None,
         **mix_attrs
     )
 
+    # Generate configuration for everything in one step...
     gen_config_target = "config"
     mix_gen_config(
         name = gen_config_target,
@@ -479,9 +478,11 @@ def mix_project(name = None,
         **mix_attrs
     )
 
+    app_link_targets = [link_target(app) for app in apps_targets.keys()]
+    external_dep_targets = [external_dep_target(d) for (d, info) in deps_graph.items() if (d not in provided_deps) and (not info["in_umbrella"])]
     elixir_merge_overlays(
         name = "project",
-        overlays = [third_party_target, compile_app_target] + [link_target(app) for app in apps_targets.keys()],
+        overlays = [compile_app_target] + app_link_targets + external_dep_targets,
         **mix_attrs
     )
 

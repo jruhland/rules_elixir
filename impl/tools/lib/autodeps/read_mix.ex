@@ -30,9 +30,25 @@ defmodule RulesElixir.Tools.ReadMix do
         end
       end)
 
-    deps_map =
-      Mix.Dep.load_on_environment(only: Mix.env())
-      |> Enum.into(%{}, fn d -> {d.app, d} end)
+    env_deps = Mix.Dep.load_on_environment(only: Mix.env())
+    deps_map = Enum.into(env_deps, %{}, fn d -> {d.app, d} end)
+
+    top_level_deps_according_to_mix = Enum.filter(env_deps, fn d -> d.top_level end)
+    top_level_deps = if cfg.app do # not umbrella
+      MapSet.new(top_level_deps_according_to_mix)
+    else
+      top_level_deps_according_to_mix
+      |> Enum.flat_map(fn d ->
+	d.deps
+	|> Enum.filter(fn x ->
+	  # I SWEAR that it is supposed to be `:in_umbrella` here
+	  !x.opts[:in_umbrella] end)
+	|> Enum.map(fn x -> x.app end)
+      end)
+      |> Enum.into(%MapSet{})
+    end
+
+    IO.inspect(top_level_deps, label: "TOP LEVEL DEPS")
 
     dep_tree =
       deps_map
@@ -51,14 +67,17 @@ defmodule RulesElixir.Tools.ReadMix do
           true ->
             deps_names = dep.deps |> Enum.map(fn d -> to_string(d.app) end) |> Enum.sort()
 
-            IO.puts("GET TRANSITIVE DEPS #{app}")
             {app_name,
              %{
                path: rel_path,
                deps: deps_names,
-               inputs: transitive_deps(deps_map, app) |> Stream.uniq |> Stream.map(&to_string/1) |> Enum.sort,
-               in_umbrella: dep.opts[:from_umbrella],
-	       top_level: dep.top_level
+               inputs:
+                 transitive_deps(deps_map, app)
+                 |> Stream.uniq()
+                 |> Stream.map(&to_string/1)
+                 |> Enum.sort(),
+               in_umbrella: !!dep.opts[:from_umbrella],  # supposed to be `:from_umbrella` here 
+               top_level: MapSet.member?(top_level_deps, app)
              }}
         end
       end)
@@ -81,7 +100,7 @@ defmodule RulesElixir.Tools.ReadMix do
 
   def transitive_deps(deps_map, app) do
     Stream.concat(
-      [app] |> Stream.cycle |> Enum.take(1),
+      [app] |> Stream.cycle() |> Enum.take(1),
       deps_map[app].deps |> Stream.flat_map(fn dep -> transitive_deps(deps_map, dep.app) end)
     )
   end

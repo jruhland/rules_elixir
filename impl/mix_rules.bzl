@@ -433,7 +433,9 @@ def mix_project(name = None,
 
     deps_targets = []
     for (dep_app, info) in deps_graph.items():
-        if info["top_level"] and (not info["in_umbrella"]):
+        if info["in_umbrella"]:
+            pass
+        elif info["top_level"]:
             # Note that if two direct dependencies both depend on the same indirect dependency, that
             # indirect dependency may be compiled twice.
             input_globs = [
@@ -456,13 +458,15 @@ def mix_project(name = None,
                 input_tree = inputs,
                 **mix_attrs
             )
-        elif not info["in_umbrella"]:
+        elif dep_app in provided_deps:
             elixir_merge_overlays(
                 name = external_dep_target(dep_app),
                 overlays = [external_dep_target(provided_deps[dep_app])],
                 only = [dep_app],
                 **mix_attrs
             )
+        else:
+            print("can't find", dep_app, " hopefully it is unused")
 
     # Each app in the umbrella gets its own link target
     for app, targets in apps_targets.items():

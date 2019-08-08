@@ -70,7 +70,10 @@ def do_merge_overlays(ctx, deps, out_dir, only=[]):
           REL=$OUT/$1 ; shift
           SRC=$1 ; shift
           mkdir -p $REL
-          cp -r $SRC/* $REL
+          #echo "doing copy (merge overlays)"
+                
+          # lol FIXME why does bsd cp not work?  it says permission denied... 
+          gcp -r $SRC/* $REL
         done
         """
     )
@@ -230,7 +233,8 @@ mix_deps_compile = rule(
 # in case of an umbrella it is called once for each child application
 _elixir_link1_attrs = {
     "app_name": attr.string(),
-    "libs": attr.label_list(),
+    "sources": attr.label_list(), # "Source" libraries, compiled beams flattened into lib/app_name
+    "overlays": attr.label_list(), # Dependency projects
 }
 
 def _elixir_link1_impl(ctx):
@@ -239,18 +243,20 @@ def _elixir_link1_impl(ctx):
     subdir = ebin_for_app(ctx.attr.app_name)
     ebin_dir = ctx.actions.declare_directory("{}/{}".format(out_name, subdir))
 
-    lib_loadpaths = depset(transitive = [lib[ElixirLibrary].loadpath for lib in ctx.attr.libs])
+    compiled_beams = depset(transitive = [lib.files for lib in ctx.attr.sources])
     args = ctx.actions.args()
     args.add(ebin_dir.path)
-    args.add_all(lib_loadpaths, expand_directories = True)
+    args.add_all(compiled_beams, expand_directories = True)
+
     ctx.actions.run_shell(
-        inputs = lib_loadpaths,
+        inputs = compiled_beams,
         outputs = [out_dir, ebin_dir],
         arguments = [args],
         command = """
         OUT=$1 ; shift
-        cp $@ $OUT
-        """
+        gcp -r $@ $OUT
+        """,
+        use_default_shell_env = True,
     )
 
     return [
@@ -261,13 +267,14 @@ def _elixir_link1_impl(ctx):
         BuildOverlay(
             structure = [
                 struct(
+                    app_name = ctx.attr.app_name,
                     relative = subdir,
                     location = ebin_dir
                 ),
-            ]
+            ],
         ),
         DefaultInfo(
-            files = depset([ebin_dir])
+            files = depset([out_dir])
         ),
     ]
 
@@ -384,6 +391,9 @@ def external_group_target(group):
 def external_dep_target(dep_name):
     return "external_dep_" + dep_name
 
+def umbrella_compile_target(app_name):
+    return app_name + "_compile"
+
 def all_build_files(external_projects):
     return native.glob(["{}/{}".format(path, build_file)
                         for (_, path) in external_projects.items()
@@ -457,9 +467,18 @@ def mix_project(name = None,
     # Each app in the umbrella gets its own link target
     for app, targets in apps_targets.items():
         elixir_link1(
-            name = link_target(app),
+            name = umbrella_compile_target(app),
             app_name = app,
-            libs = targets,
+            sources = targets,
+            **mix_attrs
+        )
+        dep_overlays = [
+            umbrella_compile_target(d) if deps_graph[d]["in_umbrella"] else external_dep_target(d)
+            for d in deps_graph[app]["deps"]
+        ]
+        elixir_merge_overlays(
+            name = link_target(app),
+            overlays = [umbrella_compile_target(app)] + dep_overlays,
             **mix_attrs
         )
 

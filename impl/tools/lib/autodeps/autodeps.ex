@@ -31,7 +31,6 @@ defmodule Mix.Tasks.Autodeps do
     options = parse_args(args)
     Mix.Project.get!()
 
-
     # Tuples {file, compile_dep_modules, runtime_dep_modules}
     :ets.new(:found_deps, [:set, :public, :named_table, {:write_concurrency, true}])
 
@@ -55,8 +54,8 @@ defmodule Mix.Tasks.Autodeps do
       fn tgt -> Common.qualified_target(project_dir <> "/" <> tgt) end
     end
 
-    Process.put(:build_path, Mix.Project.build_path(config))
-    Process.put(:third_party_target, project_root_target.("third_party"))
+    Process.put(:build_path, Mix.Project.build_path(config))    
+    Process.put(:third_party_prefix, project_root_target.("external_dep_"))
     Process.put(:config_target, project_root_target.("config"))
 
     Mix.Task.run("loadconfig")
@@ -165,9 +164,10 @@ defmodule Mix.Tasks.Autodeps do
     # Hack this for now
     case to_string(file) do
       <<prefix::binary-size(len), "/lib/", rest::binary>> when prefix == buildpath ->
-	IO.puts("HACK THIS FOR NOW?? #{rest}")
+	# IO.puts("HACK THIS FOR NOW?? #{rest}")
 	# {:ok, Process.get(:third_party_target)}
-	{:ok, "external_dep_#{rest |> Path.split |> List.first}"}
+        depname = rest |> Path.split |> List.first
+	{:ok, Process.get(:third_party_prefix) <> depname}
       _ when module == Application ->
 	{:ok, Process.get(:config_target)}
       _ when module == :application ->
@@ -181,13 +181,8 @@ defmodule Mix.Tasks.Autodeps do
 
   defp modules_to_targets(file, modules, opts \\ []) do
     include_third_party? = Keyword.get(opts, :include_third_party, false)
-    if String.contains?(file, "app_one") do
-      IO.inspect({:modules_to_targets, file, include_third_party?, modules})
-      IO.puts("")
-    end
     modules
     |> Enum.flat_map(fn module ->
-
       case :ets.lookup(:module_location, module) do
         [{_, dep_file}] when dep_file != file -> [dep_file]
         _ ->
@@ -208,8 +203,10 @@ defmodule Mix.Tasks.Autodeps do
 	  {0, Common.sibling_target(dep_file)}
 	String.starts_with?(dep_file, "//") ->
 	  # already a target, third pary dep, sort last
+          #IO.puts("already a target #{dep_file}")
 	  {2, dep_file}
 	true ->
+          #IO.puts("qualified_target #{dep_file} => #{Common.qualified_target(dep_file)}")
 	  {1, Common.qualified_target(dep_file)}
       end
     end)

@@ -18,7 +18,7 @@ defmodule Mix.Tasks.Autodeps.Recursive do
 
     project = Mix.Project.config()
 
-    IO.puts("RECURSIVE #{inspect(project[:app])} #{inspect opts}")
+    #IO.puts("RECURSIVE #{inspect(project[:app])} #{inspect opts}")
     Process.put(:this_app, project[:app])
     # Phoenix really wants to be loaded at compile time..whatever
     case :code.lib_dir(:phoenix) do

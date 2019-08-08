@@ -4,6 +4,9 @@ here = File.cwd!()
 #0 = System.cmd("cp", ["-r", "{deps_dir}/*", "{project_dir}"]) |> elem(1)
 File.cd!("{project_dir}")
 
+IO.puts("MIX RUNNER #{inspect(System.argv())}")
+#:os.cmd('find .') |> IO.puts
+
 Mix.start
 # Mix.debug(true)
 Mix.CLI.main
@@ -17,7 +20,11 @@ if !File.exists?("{build_path}"), do: :erlang.halt(0)
 # so we need to tell cp to follow links ... but the way to do this is different
 # on macOS vs. Linux
 
-args = List.flatten ["-rL", File.ls!(), dest] # Linux
-#args = List.flatten ["-r", File.ls!(), dest] # macOS?
+#files_to_copy = File.ls!() -- ["bazel-out"]
+files_to_copy = ["_build"]
 
+#args = List.flatten ["-rL", File.ls!(), dest] # Linux
+args = List.flatten ["-r", files_to_copy, dest] # macOS?
+
+IO.puts("DOING CP (MIX RUNNER), ARGS = #{inspect(args)}")
 0 = System.cmd("cp", args) |> elem(1)

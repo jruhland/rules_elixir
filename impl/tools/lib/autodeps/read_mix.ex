@@ -1,6 +1,7 @@
 defmodule RulesElixir.Tools.ReadMix do
   alias RulesElixir.Tools.Bazel
 
+  #PUBLIC API
   def project_build_file(config, extra_params) do
     cfg = %{deps_path: deps_path} = Enum.into(config, %{})
     cwd = File.cwd!()
@@ -37,18 +38,21 @@ defmodule RulesElixir.Tools.ReadMix do
     top_level_deps = if cfg.app do # not umbrella
       MapSet.new(top_level_deps_according_to_mix)
     else
-      top_level_deps_according_to_mix
+      umbrella_deps = Enum.map(Mix.Dep.Umbrella.unloaded, fn a -> a.app end)
+      
+      umbrella_deps
       |> Enum.flat_map(fn d ->
-	d.deps
+	deps_map[d].deps
 	|> Enum.filter(fn x ->
 	  # I SWEAR that it is supposed to be `:in_umbrella` here
-	  !x.opts[:in_umbrella] end)
+	  !x.opts[:in_umbrella]
+        end)
 	|> Enum.map(fn x -> x.app end)
       end)
       |> Enum.into(%MapSet{})
     end
 
-    IO.inspect(top_level_deps, label: "TOP LEVEL DEPS")
+    #IO.inspect(top_level_deps, label: "TOP LEVEL DEPS")
 
     dep_tree =
       deps_map

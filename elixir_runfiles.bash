@@ -21,7 +21,8 @@ else
     exit 1
 fi
 # --- end runfiles.bash initialization ---
-#RUNFILES_LIB_DEBUG=1
+
+# RUNFILES_LIB_DEBUG=1
 export LC_ALL="en_US.UTF-8"
 #exec $(rlocation elixir/bin)/$1 "${@:2}"
 $(rlocation elixir/bin)/$1 "${@:2}"  2>&1

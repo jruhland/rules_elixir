@@ -475,6 +475,7 @@ def mix_project(name = None,
         dep_overlays = [
             umbrella_compile_target(d) if deps_graph[d]["in_umbrella"] else external_dep_target(d)
             for d in deps_graph[app]["deps"]
+            if d in deps_graph # this check needed becuase `d` could be e.g. a dep with only: [:test]
         ]
         elixir_merge_overlays(
             name = link_target(app),

@@ -31,7 +31,7 @@ defmodule RulesElixir.Tools.ReadMix do
         end
       end)
 
-    env_deps = Mix.Dep.load_on_environment(only: Mix.env())
+    env_deps = Mix.Dep.load_on_environment(env: Mix.env())
     deps_map = Enum.into(env_deps, %{}, fn d -> {d.app, d} end)
 
     top_level_deps_according_to_mix = Enum.filter(env_deps, fn d -> d.top_level end)
@@ -51,8 +51,6 @@ defmodule RulesElixir.Tools.ReadMix do
       end)
       |> Enum.into(%MapSet{})
     end
-
-    #IO.inspect(top_level_deps, label: "TOP LEVEL DEPS")
 
     dep_tree =
       deps_map
@@ -103,10 +101,17 @@ defmodule RulesElixir.Tools.ReadMix do
   end
 
   def transitive_deps(deps_map, app) do
-    Stream.concat(
-      [app] |> Stream.cycle() |> Enum.take(1),
-      deps_map[app].deps |> Stream.flat_map(fn dep -> transitive_deps(deps_map, dep.app) end)
-    )
+    case Map.fetch(deps_map, app) do
+      {:ok, entry} ->
+        Stream.concat(
+          [app],
+          entry.deps
+          |> Stream.flat_map(fn dep ->
+            transitive_deps(deps_map, dep.app)
+          end)
+        )
+      _ -> []
+    end
   end
 
   defp ensure_relative(path, from) do

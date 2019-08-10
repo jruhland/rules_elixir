@@ -114,10 +114,7 @@ def run_mix_task(ctx,
                  **kwargs):
 
     merged_overlays_dir = ctx.actions.declare_directory(
-        "{}/{}_merged_deps".format(
-            ctx.label.name,
-            ctx.attr.build_path
-            )
+        "{}_merged_deps".format(ctx.label.name)
     )
     merged_overlays = do_merge_overlays(ctx, deps, merged_overlays_dir)
     
@@ -163,6 +160,7 @@ def run_mix_task(ctx,
 _mix_deps_compile_attrs = {
     "group_name": attr.string(),
     "deps_to_compile": attr.string_list(),
+    "deps_to_expose": attr.string_list(),
     "input_tree": attr.label_list(allow_files = True),
     "deps": attr.label_list(),
     #"provided": attr.string_list(default = []),
@@ -184,7 +182,7 @@ def _mix_deps_compile_impl(ctx):
             relative = ebin_for_app(dep),
             location = ctx.actions.declare_directory("{}/{}/{}".format(out_name, ctx.attr.build_path, ebin_for_app(dep)))
         )
-        for dep in ctx.attr.deps_to_compile
+        for dep in ctx.attr.deps_to_expose
     ]
     ebin_dirs = [e.location for e in structure]
     args = ctx.actions.args()
@@ -420,31 +418,34 @@ def mix_project(name = None,
         visibility = ["//visibility:public"],
     )
 
+    topo_elixir = sorted([
+        (len(info["inputs"]), dep_app, info)
+        for (dep_app, info) in deps_graph.items()
+        if len(native.glob(["{}/mix.exs".format(info["path"])])) > 0
+    ])
+
     # I can't figure out how to get the deps.compile step to compile indirect deps (deps of deps) by themselves.
     # But, they do get compiled when we compile the direct deps that depend on them.
     # So if we keep track of which direct dep "provides" each indirect dep, then we can create targets that refer
     # to every dep, which is important so that source files can depend on only the deps that they need. 
+    # for (c, a, i) in topo_elixir:
+    #     print(c, a, i["inputs"])
     provided_deps = {}
-    for (dep_app, info) in deps_graph.items():
+
+    for (_, dep_app, info) in topo_elixir:
         if info["top_level"] and (not info["in_umbrella"]):
             for d in info["inputs"]:
                 if (not deps_graph[d]["top_level"]) and not (d in provided_deps):
-                    print(d, "PROVIDED BY", dep_app)
-                    provided_deps[d] = dep_app
-
+                    if 0 == len(native.glob(["{}/mix.exs".format(deps_graph[d]["path"])])):
+                        #print(d, "PROVIDED BY", dep_app)
+                        provided_deps[d] = dep_app
+    #
+    provided_deps['protobuf'] = 'grpc'
     deps_targets = []
     for (dep_app, info) in deps_graph.items():
         if info["in_umbrella"]:
             pass
-        elif dep_app in provided_deps:
-            #print("USING PROVIDED", dep_app)
-            elixir_merge_overlays(
-                name = external_dep_target(dep_app),
-                overlays = [external_dep_target(provided_deps[dep_app])],
-                only = [dep_app],
-                **mix_attrs
-            )
-        elif info["top_level"]:
+        elif not dep_app in provided_deps:
             # Note that if two direct dependencies both depend on the same indirect dependency, that
             # indirect dependency may be compiled twice.
             input_globs = [
@@ -454,23 +455,31 @@ def mix_project(name = None,
             deps_mixfiles = all_build_files(external_projects)
             inputs = depset(deps_mixfiles + native.glob(input_globs)) # This depset is a hack to remove duplicates
             deps_targets += [external_dep_target(dep_app)]
-            #print("COMPILING TOP LEVEL", dep_app, info["inputs"])
+            
             mix_deps_compile(
                 name = external_dep_target(dep_app),
                 group_name = dep_app,
-                deps = [umbrella_compile_target(d) if deps_graph[d]["in_umbrella"] else external_dep_target(d) for d in info["deps"]],
-                #deps = [external_dep_target(d) for d in info["deps"] if deps_graph[d]["top_level"]],
+                #deps = [umbrella_compile_target(d) if deps_graph[d]["in_umbrella"] else external_dep_target(d) for d in info["deps"] if d not in provided_deps],
+                deps = [external_dep_target(d) for d in info["inputs"] if d != dep_app and d not in provided_deps],
 
                 # For some reason Mix does not like it when you ask it to just compile `dep_app` here.
                 # It complains that the transitive deps have the wrong environment, but if you tell it
                 # to compile all the transitive deps at once, then it's fine...
                 #deps_to_compile = info["inputs"],
-                deps_to_compile = [dep_app],
+                deps_to_compile = [d for d in info["inputs"] if d in provided_deps] + [dep_app],
+                deps_to_expose = info["inputs"],
                 input_tree = inputs,
                 **mix_attrs
             )
         else:
-            print("can't find", dep_app, " hopefully it is unused")
+            print("USING ", dep_app, "PROVIDED BY ", provided_deps[dep_app])
+            elixir_merge_overlays(
+                name = external_dep_target(dep_app),
+                overlays = [external_dep_target(provided_deps[dep_app])],
+                only = [dep_app],
+                **mix_attrs
+            )
+
 
     # Each app in the umbrella gets its own link target
     for app, targets in apps_targets.items():

@@ -429,12 +429,21 @@ def mix_project(name = None,
         if info["top_level"] and (not info["in_umbrella"]):
             for d in info["inputs"]:
                 if (not deps_graph[d]["top_level"]) and not (d in provided_deps):
+                    print(d, "PROVIDED BY", dep_app)
                     provided_deps[d] = dep_app
 
     deps_targets = []
     for (dep_app, info) in deps_graph.items():
         if info["in_umbrella"]:
             pass
+        elif dep_app in provided_deps:
+            #print("USING PROVIDED", dep_app)
+            elixir_merge_overlays(
+                name = external_dep_target(dep_app),
+                overlays = [external_dep_target(provided_deps[dep_app])],
+                only = [dep_app],
+                **mix_attrs
+            )
         elif info["top_level"]:
             # Note that if two direct dependencies both depend on the same indirect dependency, that
             # indirect dependency may be compiled twice.
@@ -445,24 +454,19 @@ def mix_project(name = None,
             deps_mixfiles = all_build_files(external_projects)
             inputs = depset(deps_mixfiles + native.glob(input_globs)) # This depset is a hack to remove duplicates
             deps_targets += [external_dep_target(dep_app)]
+            #print("COMPILING TOP LEVEL", dep_app, info["inputs"])
             mix_deps_compile(
                 name = external_dep_target(dep_app),
                 group_name = dep_app,
-                deps = [external_dep_target(d) for d in info["deps"] if deps_graph[d]["top_level"]],
+                deps = [umbrella_compile_target(d) if deps_graph[d]["in_umbrella"] else external_dep_target(d) for d in info["deps"]],
+                #deps = [external_dep_target(d) for d in info["deps"] if deps_graph[d]["top_level"]],
 
                 # For some reason Mix does not like it when you ask it to just compile `dep_app` here.
                 # It complains that the transitive deps have the wrong environment, but if you tell it
                 # to compile all the transitive deps at once, then it's fine...
-                deps_to_compile = info["inputs"],
-
+                #deps_to_compile = info["inputs"],
+                deps_to_compile = [dep_app],
                 input_tree = inputs,
-                **mix_attrs
-            )
-        elif dep_app in provided_deps:
-            elixir_merge_overlays(
-                name = external_dep_target(dep_app),
-                overlays = [external_dep_target(provided_deps[dep_app])],
-                only = [dep_app],
                 **mix_attrs
             )
         else:

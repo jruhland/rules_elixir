@@ -73,7 +73,7 @@ def do_merge_overlays(ctx, deps, out_dir, only=[]):
           #echo "doing copy (merge overlays)"
                 
           # lol FIXME why does bsd cp not work?  it says permission denied... 
-          gcp -r $SRC/* $REL
+          cp -r $SRC/* $REL
         done
         """
     )
@@ -252,7 +252,7 @@ def _elixir_link1_impl(ctx):
         arguments = [args],
         command = """
         OUT=$1 ; shift
-        gcp -r $@ $OUT
+        cp -r $@ $OUT
         """,
         use_default_shell_env = True,
     )

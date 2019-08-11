@@ -13,7 +13,7 @@ merged_deps_files = Enum.map(File.ls!("{deps_dir}"), &"{deps_dir}/#{&1}")
 File.mkdir_p!("{build_path}")
 mcp_args = List.flatten(["-r", merged_deps_files , "{build_path}/"])
 IO.inspect(mcp_args, label: "mcp args")
-0 = System.cmd("gcp", mcp_args) |> elem(1)
+0 = System.cmd("cp", mcp_args) |> elem(1)
 
 
 IO.puts("MIX RUNNER #{inspect(System.argv())}")

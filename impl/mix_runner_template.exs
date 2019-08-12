@@ -4,16 +4,23 @@ here = File.cwd!()
 IO.puts("here #{here}")
 IO.puts("DEPS_DIR {deps_dir}")
 IO.puts("BUILD PATH {build_path}")
-IO.puts("PROJET_DIR {project_dir}")
+IO.puts("PROJECT_DIR {project_dir}")
+IO.puts("DEST DIR {out_dir}")
 #:os.cmd(to_charlist("find {deps_dir}")) |> IO.puts
 
 File.cd!("{project_dir}")
 
-merged_deps_files = Enum.map(File.ls!("{deps_dir}"), &"{deps_dir}/#{&1}")
-File.mkdir_p!("{build_path}")
-mcp_args = List.flatten(["-r", merged_deps_files , "{build_path}/"])
-IO.inspect(mcp_args, label: "mcp args")
-0 = System.cmd("cp", mcp_args) |> elem(1)
+case File.ls("{deps_dir}") do
+  {:ok, entries} ->
+    merged_deps_files = Enum.map(entries, &"{deps_dir}/#{&1}")
+    File.mkdir_p!("{build_path}")
+    mcp_args = List.flatten(["-r", merged_deps_files , "{build_path}/"])
+    IO.inspect(mcp_args, label: "mcp args")
+    0 = System.cmd("cp", mcp_args) |> elem(1)
+
+  _ -> nil
+end
+
 
 
 IO.puts("MIX RUNNER #{inspect(System.argv())}")

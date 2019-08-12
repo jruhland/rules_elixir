@@ -1,1 +1,1 @@
-exports_files(["elixir_script.template", "mix_runner_template.exs"])
+exports_files(["elixir_script.template", "mix_runner_template.exs", "new_mix_template.exs"])

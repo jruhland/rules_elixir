@@ -9,7 +9,7 @@ defmodule Mix.Tasks.Autodeps.Recursive do
   """
 
   @impl true
-  def run(opts) do
+  def run(_opts) do
 
     Mix.Project.get!()
 

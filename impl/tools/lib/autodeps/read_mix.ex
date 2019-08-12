@@ -2,30 +2,14 @@ defmodule RulesElixir.Tools.ReadMix do
   alias RulesElixir.Tools.Bazel
 
   #PUBLIC API
-  def project_build_file(config, extra_params) do
-    cfg = %{deps_path: deps_path} = Enum.into(config, %{})
+  def project_build_file(config), do: project_build_file(config, Mix.env)
+
+  def project_build_file(config, mix_env) do
+    cfg = Enum.into(config, %{})
     cwd = File.cwd!()
 
-    env_deps = Mix.Dep.load_on_environment(env: Mix.env())
+    env_deps = Mix.Dep.load_on_environment(env: mix_env)
     deps_map = Enum.into(env_deps, %{}, fn d -> {d.app, d} end)
-
-    top_level_deps_according_to_mix = Enum.filter(env_deps, fn d -> d.top_level end)
-    top_level_deps = if cfg.app do # not umbrella
-      MapSet.new(top_level_deps_according_to_mix)
-    else
-      umbrella_deps = Enum.map(Mix.Dep.Umbrella.unloaded, fn a -> a.app end)
-      
-      umbrella_deps
-      |> Enum.flat_map(fn d ->
-	deps_map[d].deps
-	|> Enum.filter(fn x ->
-	  # I SWEAR that it is supposed to be `:in_umbrella` here
-	  !x.opts[:in_umbrella]
-        end)
-	|> Enum.map(fn x -> x.app end)
-      end)
-      |> Enum.into(%MapSet{})
-    end
 
     dep_tree =
       deps_map
@@ -58,7 +42,6 @@ defmodule RulesElixir.Tools.ReadMix do
                  |> Enum.sort(),
                in_umbrella: !!dep.opts[:from_umbrella],  # supposed to be `:from_umbrella` here 
 	       manager: dep.manager,
-               top_level: MapSet.member?(top_level_deps, app)
              }}
         end
       end)
@@ -74,7 +57,7 @@ defmodule RulesElixir.Tools.ReadMix do
           build_path: ensure_relative(Mix.Project.build_path(config), cwd),
           apps_path: Map.get(cfg, :apps_path, nil),
           deps_graph: %Bazel.Map{kvs: dep_tree},
-        ] ++ extra_params
+        ]
     }
   end
 

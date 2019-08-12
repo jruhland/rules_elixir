@@ -14,7 +14,12 @@ def elixir_compile(ctx, srcs, out, loadpath = []):
         inputs = depset(direct = srcs, transitive = [loadpath]),
         progress_message = "elixir_compile {}".format(", ".join([s.basename for s in srcs])),
         arguments = [args],
-        use_default_shell_env = True,
+        #use_default_shell_env = True,
+        env = {
+            "HOME": "."
+        }
+
+
     )
 
 _elixir_library_attrs = {
@@ -120,6 +125,8 @@ def _elixir_script_impl(ctx):
 
     # do a bunch of nasty hacks to set up the environment
     env_file = ctx.actions.declare_file("env")
+    extra_env_Str = "\n".join(["export {}={}".format(var, val) for (var, val) in ctx.attr.env.items()])
+    print(extra_env_Str)
     ctx.actions.run_shell(
         outputs = [env_file, ctx.outputs.executable],
         inputs = [script_body],
@@ -133,9 +140,9 @@ EOF
             env_file = env_file.path,
             script_file = script_body.path,
             out_exe = ctx.outputs.executable.path,
-            extra_env = "\n".join(["export {}={}".format(var, val) for (var, val) in ctx.attr.env.items()]),
+            extra_env = extra_env_Str
         ),
-        use_default_shell_env = True,
+        #use_default_shell_env = True,
     )
     return [
         DefaultInfo(runfiles = src_runfiles.merge(lib_runfiles))

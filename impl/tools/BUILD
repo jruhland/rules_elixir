@@ -4,7 +4,7 @@ elixir_script(
     name = "autodeps",
     srcs = ["autodeps_runner.exs"],
     deps = ["//impl/tools/lib/autodeps:mix_tasks"],
-    # env = {"MIX_ENV": "test"}
+    # env = {"HOME": "test"}
 )
 
 # elixir_script(

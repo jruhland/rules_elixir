@@ -7,8 +7,8 @@ for {root_rel, src} <- deps do
     File.mkdir_p!(rel)
     for rel_file <- File.ls!(src) do
       args = List.flatten ["-rL", "#{src}/#{rel_file}", rel]
-      # IO.puts("#{inspect(["cp" | args])}")
-      {_, 0} = System.cmd("cp", args)
+      IO.puts("DEPS #{inspect(["cp" | args])}")
+      {_, 0} = System.cmd("gcp", args)
     end
 end
 
@@ -19,7 +19,7 @@ System.put_env("MIX_HOME", abs_home <> "/.mix")
 File.cd!("{project_dir}/{subdir}", fn ->
   #:os.cmd('/usr/bin/find .') |> IO.puts
   Mix.start
-  #  Mix.debug(true)
+  #Mix.debug(true)
   Mix.CLI.main
 end)
 
@@ -29,9 +29,12 @@ for {rel, dest} <- outputs do
       {:ok, entries} -> 
 	for rel_file <- entries do
 	    args = List.flatten ["-rL", "{project_dir}/#{rel}/#{rel_file}", dest] # Linux
-	    # IO.puts("#{inspect(["cp" | args])}")
-	    {_, 0} = System.cmd("cp", args)
+            IO.puts("OUTPUTS #{inspect(["cp" | args])}")
+	    {_, 0} = System.cmd("gcp", args)
 	end
-      _ -> IO.warn("cannot find #{rel}")
+      _ ->
+        IO.inspect(outputs)
+        IO.puts("cannot find #{rel}")
+        :erlang.halt(1)
     end
 end

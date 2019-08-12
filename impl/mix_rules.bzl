@@ -95,7 +95,7 @@ def run_mix_task(ctx,
         #use_default_shell_env = True,
         env = {
             "HOME": mix_home.path,
-            "PATH": "/bin/",
+            "PATH": "/bin/:/usr/bin/:/usr/local/bin",
             "MIX_ENV": ctx.attr.mix_env,
         },
         **kwargs
@@ -104,19 +104,26 @@ def run_mix_task(ctx,
 ################################################################
 # primitive mix invocation rule
 # used to download hex and rebar and provide them to the real mix_task rule
+# kind of a hack
 _prim_mix_invoke_attrs = {
     "args": attr.string_list()
 }
 
 def _prim_mix_invoke_impl(ctx):
     mixhome = ctx.actions.declare_directory("fake_mix_home")
+    prim_mix_script = """
+    abs_home = Path.absname(System.get_env("HOME"))
+    System.put_env("MIX_HOME", abs_home <> "/.mix")
+    Mix.start
+    Mix.CLI.main
+    """
     
     ctx.actions.run(
         executable = ctx.executable._elixir_tool,
-        arguments = ["mix"] + ctx.attr.args,
+        arguments = ["elixir", "-e", prim_mix_script, "--"] + ctx.attr.args,
         outputs = [mixhome],
         env = {
-            "HOME": mixhome.path,
+            "HOME": mixhome.path
         },
     )
 
@@ -145,9 +152,9 @@ _mix_task_attrs = {
 }
 
 def _mix_task_impl(ctx):
-    outputs_root = ctx.genfiles_dir.path + "/" + ctx.label.package + "/" + ctx.attr.prefix + "/"
+    package_component = ctx.label.package + "/" if len(ctx.label.package) > 0 else ""
+    outputs_root = ctx.bin_dir.path + "/" + package_component + ctx.attr.prefix + "/"
     outputs_rel = dict([(s.path[len(outputs_root):], s) for s in ctx.outputs.my_output_list])
-    print(ctx.label, outputs_rel)
     args = ctx.actions.args()
     args.add_all(ctx.attr.args)
     
@@ -203,7 +210,10 @@ def mix_project(name = None,
         lockfile = "mix.lock",
         apps_mixfiles = native.glob(["{}/{}".format(info["path"], build_file)
                                      for info in deps_graph.values()
-                                     for build_file in ["mix.exs", "rebar.config"]]),
+                                     for build_file in ["mix.exs", "rebar.config",
+                                                        "rebar.config.script", "rebar.lock",
+                                                        "Makefile",
+                                     ]]),
         config_tree = native.glob(["**/config/*.exs"]),
         visibility = ["//visibility:public"],
     )

@@ -2,13 +2,11 @@ defmodule RulesElixir.Tools.ReadMix do
   alias RulesElixir.Tools.Bazel
 
   #PUBLIC API
-  def project_build_file(config), do: project_build_file(config, Mix.env)
-
-  def project_build_file(config, mix_env) do
+  def project_build_file(config) do
     cfg = Enum.into(config, %{})
     cwd = File.cwd!()
 
-    env_deps = Mix.Dep.load_on_environment(env: mix_env)
+    env_deps = Mix.Dep.load_on_environment(env: Mix.env())
     deps_map = Enum.into(env_deps, %{}, fn d -> {d.app, d} end)
 
     dep_tree =
@@ -47,12 +45,14 @@ defmodule RulesElixir.Tools.ReadMix do
       end)
       |> Enum.sort_by(fn {app, _} -> app end)
 
+    project_name = to_string(cfg.app || Path.basename(cwd))
+    mix_env = to_string(Mix.env())
     %Bazel.Rule{
       rule: "mix_project",
       params:
         [
-          name: to_string(cfg.app || Path.basename(cwd)),
-          mix_env: to_string(Mix.env()),
+          name: project_name <> "_" <> mix_env,
+          mix_env: mix_env,
           config_path: cfg.config_path,
           build_path: ensure_relative(Mix.Project.build_path(config), cwd),
           apps_path: Map.get(cfg, :apps_path, nil),

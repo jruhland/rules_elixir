@@ -45,9 +45,14 @@ defmodule Mix.Tasks.Autodeps do
 
     Mix.Task.run("loadconfig")
 
-    config
-    |> ReadMix.project_build_file()
-    |> write_generated_file(@load_mix_rules, project_dir, options)
+    envs = [:dev, :test, :prod]
+    project_defs = envs
+    |> Enum.map(fn env ->
+      Mix.env(env)
+      ReadMix.project_build_file(config)
+    end)
+
+    write_generated_file(project_defs, @load_mix_rules, project_dir, options)
 
   end
 

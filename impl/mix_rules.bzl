@@ -84,18 +84,19 @@ def run_mix_task(ctx,
         arguments = [elixir_args, args or ctx.actions.args()],
         inputs = (
             [mix_runner, mix_home]
+            + inputs
+            + deps_structure.values()
             + ctx.files.mixfile
             + ctx.files.lockfile
             + ctx.files.apps_mixfiles
             + ctx.files.config_tree
-            + inputs
-            + deps_structure.values()
         ),
         outputs = output_structure.values(),
         #use_default_shell_env = True,
         env = {
             "HOME": mix_home.path,
-            "PATH": "/bin/"
+            "PATH": "/bin/",
+            "MIX_ENV": ctx.attr.mix_env,
         },
         **kwargs
     )
@@ -134,6 +135,7 @@ prim_mix_invoke = rule(
 ################################################################
 
 _mix_task_attrs = {
+    "prefix": attr.string(),
     "subdir": attr.string(default = ""),
     "task": attr.string(),
     "args": attr.string_list(),
@@ -143,9 +145,9 @@ _mix_task_attrs = {
 }
 
 def _mix_task_impl(ctx):
-    outputs_root = ctx.genfiles_dir.path + "/" + ctx.label.package + "/"
+    outputs_root = ctx.genfiles_dir.path + "/" + ctx.label.package + "/" + ctx.attr.prefix + "/"
     outputs_rel = dict([(s.path[len(outputs_root):], s) for s in ctx.outputs.my_output_list])
-
+    print(ctx.label, outputs_rel)
     args = ctx.actions.args()
     args.add_all(ctx.attr.args)
     
@@ -196,6 +198,7 @@ def mix_project(name = None,
 
     mix_attrs = merge(
         kwargs,
+        mix_env = mix_env,
         mixfile = "mix.exs",
         lockfile = "mix.lock",
         apps_mixfiles = native.glob(["{}/{}".format(info["path"], build_file)
@@ -206,7 +209,7 @@ def mix_project(name = None,
     )
 
     apps_targets = dict([
-        (app, target_for_app(app, info))
+        (app, name + "_" + target_for_app(app, info))
         for (app, info) in deps_graph.items()
     ])
 
@@ -219,7 +222,8 @@ def mix_project(name = None,
                 args = ["--no-deps-check"],
                 deps = [apps_targets[d] for d in info["inputs"] if d != dep_app],
                 input_tree = native.glob(["{}/**".format(info["path"])]),
-                my_output_list = ["_build/{}/lib/{}".format(mix_env, dep_app)],
+                prefix = name,
+                my_output_list = ["{}/_build/{}/lib/{}".format(name, mix_env, dep_app)],
                 **mix_attrs
             )
         else:
@@ -230,18 +234,20 @@ def mix_project(name = None,
                 deps = [apps_targets[d] for d in info["inputs"] if d != dep_app],
                 input_tree = native.glob(["{}/**".format(info["path"])]),
                 # deps that are not managed by mix are compiled in place, so we have to re-export their source directory
-                my_output_list = ["_build/{}/lib/{}".format(mix_env, dep_app)] + (["deps/"+dep_app] if info["manager"] != "mix" else []),
+                prefix = name,
+                my_output_list = ["{}/_build/{}/lib/{}".format(name, mix_env, dep_app)] + (["{}/deps/{}".format(name, dep_app)] if info["manager"] != "mix" else []),
                 **mix_attrs
             )
 
     mix_task(
-        name = "compile",
+        name = name + "_compile",
         task = "compile",
         args = ["--no-deps-check"],
         deps = [apps_targets[d] for d in deps_graph.keys()],
-        my_output_list = ["_build/{}/consolidated".format(mix_env)],
+        prefix = name,
+        my_output_list = ["{}/_build/{}/consolidated".format(name, mix_env)],
         **mix_attrs
     )
 
-        
+    
 

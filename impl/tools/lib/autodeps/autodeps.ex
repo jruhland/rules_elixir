@@ -69,21 +69,22 @@ defmodule Mix.Tasks.Autodeps do
       |> Enum.filter(fn app -> not MapSet.member?(umbrella_deps, app) end)
       |> Enum.map(&to_string/1)
 
-    Mix.Task.run("deps.compile", external_deps)
-    Mix.Task.run("autodeps.recursive", options)
+    #Mix.Task.run("deps.compile", external_deps)
+    #Mix.Task.run("autodeps.recursive", options)
 
-    generate_build_files(project_dir, options)
+    #generate_build_files(project_dir, options)
 
-    targets_by_app =
-      :ets.match(:file_to_app, :"$1")
-      |> Enum.map(fn [{file, app}] ->
-	{app, Common.qualified_target(file)}
-      end)
-      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
-      |> Enum.map(fn {app, targets} -> {app, Enum.sort(targets)} end)
+    # targets_by_app =
+    #   :ets.match(:file_to_app, :"$1")
+    #   |> Enum.map(fn [{file, app}] ->
+    # 	{app, Common.qualified_target(file)}
+    #   end)
+    #   |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+    #   |> Enum.map(fn {app, targets} -> {app, Enum.sort(targets)} end)
 
     config
-    |> ReadMix.project_build_file(apps_targets: %Bazel.Map{kvs: targets_by_app})
+#|> ReadMix.project_build_file(apps_targets: %Bazel.Map{kvs: targets_by_app})
+    |> ReadMix.project_build_file(apps_targets: %Bazel.Map{kvs: []})
     |> write_generated_file(@load_mix_rules, project_dir, options)
 
   end

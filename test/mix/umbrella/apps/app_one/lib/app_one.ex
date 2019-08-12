@@ -8,6 +8,7 @@ defmodule AppOne do
   @compile_time_json Jason.encode(%{ok: "cool"})
 
   def hello do
+    IO.puts("hello4")
     answer = Common.add(99, 14)
     IO.puts("app one; answer = #{answer}")
     IO.inspect(@compile_time_json, label: "compile time json encode")

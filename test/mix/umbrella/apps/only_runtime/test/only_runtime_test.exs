@@ -3,6 +3,6 @@ defmodule OnlyRuntimeTest do
   doctest OnlyRuntime
 
   test "greets the world" do
-    assert OnlyRuntime.hello() == :world
+    assert OnlyRuntime.hello() == [:hello, :world]
   end
 end

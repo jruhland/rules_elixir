@@ -8,19 +8,17 @@ _mix_project_attrs = {
     "mix_env":        attr.string(),
     "build_path":     attr.string(),
 
-    "external_projects": attr.string_dict(),
-    # todo remove this and pass explicitly?
-    "external_tree":     attr.label_list(allow_files = True),
-
     "apps_names":     attr.string_list(),
     "apps_mixfiles":  attr.label_list(allow_files = True),
     "config_path":    attr.label(allow_single_file = True),
     "config_tree":    attr.label_list(allow_files = True),
-    "_mix_runner_template": attr.label(allow_single_file = True,
-                                       #default = Label("@rules_elixir//impl:mix_runner_template.exs"),
-                                       default = Label("@rules_elixir//impl:new_mix_template.exs"),
-                                       
+    "_mix_runner_template": attr.label(
+        allow_single_file = True,
+        default = Label("@rules_elixir//impl:new_mix_template.exs"),
     ),
+    "_mix_home": attr.label(
+        default = Label("@rules_elixir//impl:localhex")
+    )
 }
 
 # We will produce fragments of the final _build directory in multiple separate steps,
@@ -41,9 +39,10 @@ def structure_to_elixir(structure):
     ])
 
 def combine_structures(structures):
-    return dict([tup
-                 for s in structures
-                 for tup in s.items()
+    return dict([
+        tup
+        for s in structures
+        for tup in s.items()
     ])
                  
 
@@ -51,14 +50,14 @@ def combine_structures(structures):
 def run_mix_task(ctx,
                  inputs = [],
                  deps = [],
-                 outputs_map = [],
+                 output_structure = [],
+                 subdir = "", 
                  task = None,
                  args = None,
                  **kwargs):
 
     output_name = "{}_mix_{}".format(ctx.label.name, task)
     mix_runner = ctx.actions.declare_file("{}_runner.exs".format(output_name))
-    outputs_str = structure_to_elixir(outputs_map)
     deps_structure = combine_structures([d[BuildOverlay].structure for d in deps])
 
     ctx.actions.expand_template(
@@ -66,7 +65,8 @@ def run_mix_task(ctx,
         output = mix_runner,
         substitutions = {
             "{project_dir}": ctx.file.mixfile.dirname,
-            "{outputs_list_body}": outputs_str,
+            "{subdir}": subdir,
+            "{outputs_list_body}": structure_to_elixir(output_structure),
             "{deps_list_body}": structure_to_elixir(deps_structure),
         }
     )
@@ -78,46 +78,84 @@ def run_mix_task(ctx,
         task,
     ])
 
+    mix_home = ctx.attr._mix_home.files.to_list()[0]
     ctx.actions.run(
         executable = ctx.executable._elixir_tool,
         arguments = [elixir_args, args or ctx.actions.args()],
         inputs = (
-            [mix_runner]
+            [mix_runner, mix_home]
             + ctx.files.mixfile
             + ctx.files.lockfile
             + ctx.files.apps_mixfiles
+            + ctx.files.config_tree
             + inputs
             + deps_structure.values()
         ),
-        outputs = outputs_map.values(),
-        use_default_shell_env = True,
+        outputs = output_structure.values(),
+        #use_default_shell_env = True,
+        env = {
+            "HOME": mix_home.path,
+            "PATH": "/bin/"
+        },
         **kwargs
     )
 
 ################################################################
-# `_mix_deps_compile` rule
-# Invokes mix to compile a list of external dependencies, specified by name
+# primitive mix invocation rule
+# used to download hex and rebar and provide them to the real mix_task rule
+_prim_mix_invoke_attrs = {
+    "args": attr.string_list()
+}
 
-_mix_deps_compile_attrs = {
-    "deps_to_compile": attr.string_list(),
+def _prim_mix_invoke_impl(ctx):
+    mixhome = ctx.actions.declare_directory("fake_mix_home")
+    
+    ctx.actions.run(
+        executable = ctx.executable._elixir_tool,
+        arguments = ["mix"] + ctx.attr.args,
+        outputs = [mixhome],
+        env = {
+            "HOME": mixhome.path,
+        },
+    )
+
+    return [
+        DefaultInfo(
+            files = depset([mixhome])
+        ),
+    ]
+
+prim_mix_invoke = rule(
+    _prim_mix_invoke_impl,
+    attrs = dict(elixir_common_attrs.items() + _prim_mix_invoke_attrs.items()),
+)
+
+
+################################################################
+
+_mix_task_attrs = {
+    "subdir": attr.string(default = ""),
+    "task": attr.string(),
+    "args": attr.string_list(),
     "input_tree": attr.label_list(allow_files = True),
     "deps": attr.label_list(),
     "my_output_list": attr.output_list(allow_empty = True),
 }
 
-def _mix_deps_compile_impl(ctx):
+def _mix_task_impl(ctx):
     outputs_root = ctx.genfiles_dir.path + "/" + ctx.label.package + "/"
     outputs_rel = dict([(s.path[len(outputs_root):], s) for s in ctx.outputs.my_output_list])
 
     args = ctx.actions.args()
-    args.add_all(ctx.attr.deps_to_compile)
+    args.add_all(ctx.attr.args)
     
     run_mix_task(
         ctx,
         inputs = ctx.files.input_tree,
-        outputs_map = outputs_rel,
+        output_structure = outputs_rel,
         deps = ctx.attr.deps,
-        task = "deps.compile",
+        subdir = ctx.attr.subdir,
+        task = ctx.attr.task,
         args = args,
     )
 
@@ -130,11 +168,10 @@ def _mix_deps_compile_impl(ctx):
         )
     ]
 
-mix_deps_compile = rule(
-    _mix_deps_compile_impl,
-    attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items() + _mix_deps_compile_attrs.items()),
+mix_task = rule(
+    _mix_task_impl,
+    attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items() + _mix_task_attrs.items()),
 )
-
 
 def merge(d, **kwargs):
     return dict(kwargs, **d)
@@ -142,10 +179,16 @@ def merge(d, **kwargs):
 def external_dep_target(dep_name):
     return "external_dep_" + dep_name
 
+def target_for_app(app, info):
+    c, _ = info["path"].split("/", maxsplit = 2)
+    if c == "apps":
+        return app
+    elif c == "deps":
+        return "third_party_" + app
+    else: return "first_party_" + app
 
 def mix_project(name = None,
                 apps_path = None,
-                external_projects = {},
                 deps_graph = {},
                 apps_targets = {},
                 mix_env = None,
@@ -155,42 +198,50 @@ def mix_project(name = None,
         kwargs,
         mixfile = "mix.exs",
         lockfile = "mix.lock",
-        # external_tree = native.glob(["{}/**".format(path) for (dep, path) in external_projects.items()]),
-        external_tree = [],
-        apps_mixfiles = native.glob(["{}/*/mix.exs".format(apps_path)]),
+        apps_mixfiles = native.glob(["{}/{}".format(info["path"], build_file)
+                                     for info in deps_graph.values()
+                                     for build_file in ["mix.exs", "rebar.config"]]),
         config_tree = native.glob(["**/config/*.exs"]),
         visibility = ["//visibility:public"],
     )
 
-    buildfiles_globs = ["{}/{}".format(info["path"], build_file)
-                        for info in deps_graph.values()
-                        for build_file in ["mix.exs", "rebar.config"]]
-
+    apps_targets = dict([
+        (app, target_for_app(app, info))
+        for (app, info) in deps_graph.items()
+    ])
 
     for dep_app, info in deps_graph.items():
         if info["in_umbrella"]:
-            continue
-        if len(info["inputs"]) == 1:
-            mix_deps_compile(
-                name = external_dep_target(dep_app),
-                deps_to_compile = [dep_app],
-                input_tree = native.glob(buildfiles_globs + ["{}/**".format(info["path"])]),
-                my_output_list = ["_build/dev/lib/"+dep_app,
-                                  "deps/"+dep_app,
-                ],
+            mix_task(
+                name = apps_targets[dep_app],
+                subdir = "apps/" + dep_app,
+                task = "compile",
+                args = ["--no-deps-check"],
+                deps = [apps_targets[d] for d in info["inputs"] if d != dep_app],
+                input_tree = native.glob(["{}/**".format(info["path"])]),
+                my_output_list = ["_build/{}/lib/{}".format(mix_env, dep_app)],
                 **mix_attrs
             )
         else:
-            mix_deps_compile(
-                name = external_dep_target(dep_app),
-                deps_to_compile = [dep_app],
-                deps = [external_dep_target(d) for d in info["deps"]],
-                input_tree = native.glob(buildfiles_globs + ["{}/**".format(info["path"])]),
-                my_output_list = ["_build/dev/lib/"+dep_app,
-                                  "deps/"+dep_app,
-                ],
+            mix_task(
+                name = apps_targets[dep_app],
+                task = "deps.compile",
+                args = [dep_app],
+                deps = [apps_targets[d] for d in info["inputs"] if d != dep_app],
+                input_tree = native.glob(["{}/**".format(info["path"])]),
+                # deps that are not managed by mix are compiled in place, so we have to re-export their source directory
+                my_output_list = ["_build/{}/lib/{}".format(mix_env, dep_app)] + (["deps/"+dep_app] if info["manager"] != "mix" else []),
                 **mix_attrs
             )
 
-            
+    mix_task(
+        name = "compile",
+        task = "compile",
+        args = ["--no-deps-check"],
+        deps = [apps_targets[d] for d in deps_graph.keys()],
+        my_output_list = ["_build/{}/consolidated".format(mix_env)],
+        **mix_attrs
+    )
+
         
+

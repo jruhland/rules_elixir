@@ -6,31 +6,6 @@ defmodule RulesElixir.Tools.ReadMix do
     cfg = %{deps_path: deps_path} = Enum.into(config, %{})
     cwd = File.cwd!()
 
-    deps =
-      Mix.Dep.load_and_cache()
-      |> Enum.map(fn %Mix.Dep{app: app, opts: opts} ->
-        if opts[:from_umbrella] do
-          nil
-        else
-          case ensure_relative(opts[:dest], cwd) do
-            nil ->
-              IO.warn(
-                "dependency #{app} comes from #{opts[:dest]} which is outside current directory"
-              )
-
-            relpath ->
-              {app, relpath}
-          end
-        end
-      end)
-      |> Enum.filter(&(!is_nil(&1)))
-      |> Enum.sort_by(fn {_app, path} ->
-        case Path.split(path) do
-          [^deps_path | more] -> {1, more}
-          other -> {0, other}
-        end
-      end)
-
     env_deps = Mix.Dep.load_on_environment(env: Mix.env())
     deps_map = Enum.into(env_deps, %{}, fn d -> {d.app, d} end)
 
@@ -67,7 +42,10 @@ defmodule RulesElixir.Tools.ReadMix do
             IO.warn("dependency #{app} comes from outside current directory")
 
           true ->
-            deps_names = dep.deps |> Enum.map(fn d -> to_string(d.app) end) |> Enum.sort()
+            deps_names = dep.deps
+	    |> Enum.filter(fn d -> Map.has_key?(deps_map, d.app) end)
+	    |> Enum.map(fn d -> to_string(d.app) end)
+	    |> Enum.sort()
 
             {app_name,
              %{
@@ -79,6 +57,7 @@ defmodule RulesElixir.Tools.ReadMix do
                  |> Stream.map(&to_string/1)
                  |> Enum.sort(),
                in_umbrella: !!dep.opts[:from_umbrella],  # supposed to be `:from_umbrella` here 
+	       manager: dep.manager,
                top_level: MapSet.member?(top_level_deps, app)
              }}
         end
@@ -95,7 +74,6 @@ defmodule RulesElixir.Tools.ReadMix do
           build_path: ensure_relative(Mix.Project.build_path(config), cwd),
           apps_path: Map.get(cfg, :apps_path, nil),
           deps_graph: %Bazel.Map{kvs: dep_tree},
-          external_projects: %Bazel.Map{kvs: deps}
         ] ++ extra_params
     }
   end

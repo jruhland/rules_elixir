@@ -245,7 +245,7 @@ def mix_project(name = None,
                 input_tree = native.glob(["{}/**".format(info["path"])]),
                 # deps that are not managed by mix are compiled in place, so we have to re-export their source directory
                 prefix = name,
-                my_output_list = ["{}/_build/{}/lib/{}".format(name, mix_env, dep_app)] + (["{}/deps/{}".format(name, dep_app)] if info["manager"] != "mix" else []),
+                my_output_list = ["{}/_build/{}/lib/{}".format(name, mix_env, dep_app)] + (["{}/deps/{}".format(name, dep_app)] if "manager" in info and info["manager"] != "mix" else []),
                 **mix_attrs
             )
 

@@ -25,7 +25,8 @@ defmodule RulesElixir.Tools.ReadMix do
 
           true ->
             deps_names = dep.deps
-	    |> Enum.filter(fn d -> Map.has_key?(deps_map, d.app) end)
+	    #|> Enum.filter(fn d -> Map.has_key?(deps_map, d.app) end)
+	    |> Enum.filter(fn d -> !d.opts[:only] or Mix.env() == d.opts[:only] end)
 	    |> Enum.map(fn d -> to_string(d.app) end)
 	    |> Enum.sort()
 

@@ -7,8 +7,8 @@ for {root_rel, src} <- deps do
     File.mkdir_p!(rel)
     for rel_file <- File.ls!(src) do
       args = List.flatten ["-rL", "#{src}/#{rel_file}", rel]
-      IO.puts("DEPS #{inspect(["cp" | args])}")
-      {_, 0} = System.cmd("gcp", args)
+      # IO.puts("DEPS #{inspect(["cp" | args])}")
+      {_, 0} = System.cmd("cp", args)
     end
 end
 
@@ -29,8 +29,8 @@ for {rel, dest} <- outputs do
       {:ok, entries} -> 
 	for rel_file <- entries do
 	    args = List.flatten ["-rL", "{project_dir}/#{rel}/#{rel_file}", dest] # Linux
-            IO.puts("OUTPUTS #{inspect(["cp" | args])}")
-	    {_, 0} = System.cmd("gcp", args)
+            # IO.puts("OUTPUTS #{inspect(["cp" | args])}")
+	    {_, 0} = System.cmd("cp", args)
 	end
       _ ->
         IO.inspect(outputs)

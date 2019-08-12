@@ -12,6 +12,7 @@ defmodule AppTwo do
     IO.puts("app two; answer = #{answer}")
     IO.puts("my other module says hi: #{SomeModule.some_function}")
     IO.puts("runtime only says: #{inspect(OnlyRuntime.hello)}")
+    IO.puts("time is #{inspect(Timex.now())}")
     {"text extensions", :mimerl.mime_to_exts("text/plain")}
   end
 

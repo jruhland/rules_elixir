@@ -1,3 +1,4 @@
+# set -x
 # --- begin runfiles.bash initialization ---
 # Copy-pasted from Bazel's Bash runfiles library (tools/bash/runfiles/runfiles.bash).
 set -euo pipefail
@@ -21,7 +22,5 @@ else
 fi
 # --- end runfiles.bash initialization ---
 #RUNFILES_LIB_DEBUG=1
-EXE="$BUILD_WORKSPACE_DIRECTORY/{elixir_tool}"
-# echo "RUNNING $EXE"
-# echo "{loadpath}" | tr ' ' '\n' | grep -v '^-pa$' | xargs ls -l
+EXE="{elixir_tool}"
 $EXE elixir {loadpath} {srcs} $@

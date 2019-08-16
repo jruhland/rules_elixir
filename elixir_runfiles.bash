@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # --- begin runfiles.bash initialization ---
 # Copy-pasted from Bazel's Bash runfiles library (tools/bash/runfiles/runfiles.bash).
 set -euo pipefail
@@ -20,13 +21,8 @@ else
     exit 1
 fi
 # --- end runfiles.bash initialization ---
-#RUNFILES_LIB_DEBUG=1
-# WINDOWS MANIFEST FILE INCLUDES WORKSPACE...
-exec $(rlocation elixir/bin)/$1 "${@:2}"
-# REAL SYMLINKS DON'T?
 
-# echo "ELIXIR_RUNFILES!! {elixir_tool}"
-# find .
-# echo "======================================"
-
-#exec $1 "${@:2}"
+# RUNFILES_LIB_DEBUG=1
+export LC_ALL="C.UTF-8"
+#exec $(rlocation elixir/bin)/$1 "${@:2}"
+$(rlocation elixir/bin)/$1 "${@:2}"  2>&1

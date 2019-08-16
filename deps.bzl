@@ -13,11 +13,21 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 #     )
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "new_git_repository")
 def elixir_rules_dependencies():
+
     new_git_repository(
         name = "elixir",
         remote = "https://github.com/elixir-lang/elixir.git",
-        commit = "333ebbe13b81a250765cb2174bb9158f64d1a10d",
+        commit = "2eee2fc6a4c3733537dc95083c4247a1fa723ab1",  # v1.8.0
+        #commit = "511a51ba8925daa025d3c2fd410e170c1b651013", # v1.8.1
+        #commit = "333ebbe13b81a250765cb2174bb9158f64d1a10d", # random 1.9 dev commit
         #commit = "459319fb751f81399b6e3826789782452ea5c3c9",
         build_file = "@rules_elixir//:elixir.BUILD",
     )
+    
+    # new_git_repository(
+    #     name = "elixir",
+    #     remote = "/elixir",
+    #     commit = "f6b5fa311d430d30b33078be8cefbf5777976ca4",
+    #     build_file = "@rules_elixir//:elixir.BUILD",
+    # )
 

@@ -2,7 +2,7 @@ defmodule AppOneTest do
   use ExUnit.Case
   doctest AppOne
 
-  test "greets the world" do
-    assert AppOne.hello() == :world
+  test "calls the helper" do
+    assert "I am helping this test" == TestHelperLibrary.test_helper_function()
   end
 end

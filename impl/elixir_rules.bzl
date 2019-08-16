@@ -14,7 +14,12 @@ def elixir_compile(ctx, srcs, out, loadpath = []):
         inputs = depset(direct = srcs, transitive = [loadpath]),
         progress_message = "elixir_compile {}".format(", ".join([s.basename for s in srcs])),
         arguments = [args],
-        use_default_shell_env = True,
+        #use_default_shell_env = True,
+        env = {
+            "HOME": "."
+        }
+
+
     )
 
 _elixir_library_attrs = {
@@ -83,6 +88,7 @@ _elixir_script_attrs = {
     # since scripts don't have a separate compilation step, they just have `deps`,
     # unlike elixir_libraries, which must specify compile and runtime deps separately
     "deps": attr.label_list(),
+    "env": attr.string_dict(),
     "_script_template": attr.label(
         allow_single_file = True,
         default = Label("//impl:elixir_script.template"),
@@ -105,15 +111,38 @@ def _elixir_script_impl(ctx):
     )
     src_runfiles = ctx.runfiles(files = ctx.files.srcs)
 
+    script_body = ctx.actions.declare_file("body")
     ctx.actions.expand_template(
         template = ctx.file._script_template,
-        output = ctx.outputs.executable,
+        output = script_body,
         substitutions = {
-            "{elixir_tool}": ctx.executable._elixir_tool.path,
-            "{loadpath}":    " ".join(["-pa {}".format(_rlocation(ctx, f)) for f in lib_runfiles.files]),
-            "{srcs}":        " ".join([_rlocation(ctx, f) for f in src_runfiles.files]),
+            "{elixir_tool}": ctx.executable._elixir_tool.short_path,
+            "{loadpath}":    " ".join(["-pa {}".format(_rlocation(ctx, f)) for f in lib_runfiles.files.to_list()]),
+            "{srcs}":        " ".join(["-r {}".format(_rlocation(ctx, f)) for f in src_runfiles.files.to_list()]),
         },
         is_executable = True,
+    )
+
+    # do a bunch of nasty hacks to set up the environment
+    env_file = ctx.actions.declare_file("env")
+    extra_env_Str = "\n".join(["export {}={}".format(var, val) for (var, val) in ctx.attr.env.items()])
+    print(extra_env_Str)
+    ctx.actions.run_shell(
+        outputs = [env_file, ctx.outputs.executable],
+        inputs = [script_body],
+        command = """
+        env | awk '{{print "export " $0}}' > {env_file}
+        cat >>{env_file} <<EOF
+{extra_env}
+EOF
+        cat {env_file} {script_file} > {out_exe}
+        """.format(
+            env_file = env_file.path,
+            script_file = script_body.path,
+            out_exe = ctx.outputs.executable.path,
+            extra_env = extra_env_Str
+        ),
+        #use_default_shell_env = True,
     )
     return [
         DefaultInfo(runfiles = src_runfiles.merge(lib_runfiles))
@@ -135,9 +164,15 @@ def elixir_script(name = None, **kwargs):
         deps = ["@bazel_tools//tools/bash/runfiles", "@elixir//:elixir_tool_lib"],
         srcs = [runner],
         visibility = ["//visibility:public"],
+        data =  ["@elixir//:elixir_tool"],
     )
 
-    
-    
-
-    
+def elixir_test(name = None, **kwargs):
+    runner = name + "_test_runner"
+    elixir_script_runner(name = runner, **kwargs)
+    native.sh_test(
+        name = name,
+        deps = ["@bazel_tools//tools/bash/runfiles", "@elixir//:elixir_tool_lib"],
+        srcs = [runner],
+        data = kwargs["srcs"] + ["@elixir//:elixir_tool"],
+    )

@@ -4,15 +4,21 @@ load(":common.bzl", "ElixirLibrary", "elixir_common_attrs")
 # some of these are computed in the `mix_project` macro (so we can glob)
 _mix_project_attrs = {
     "mixfile":        attr.label(allow_single_file = ["mix.exs"]),
-    "lockfile":       attr.label(allow_single_file = ["mix.lock"]),        
+    "lockfile":       attr.label(allow_single_file = ["mix.lock"]),
     "mix_env":        attr.string(),
     "build_path":     attr.string(),
-    "deps_tree":      attr.label_list(allow_files = True),
-    "deps_names":     attr.string_list(),
+
     "apps_names":     attr.string_list(),
     "apps_mixfiles":  attr.label_list(allow_files = True),
     "config_path":    attr.label(allow_single_file = True),
     "config_tree":    attr.label_list(allow_files = True),
+    "_mix_runner_template": attr.label(
+        allow_single_file = True,
+        default = Label("@rules_elixir//impl:new_mix_template.exs"),
+    ),
+    "_mix_home": attr.label(
+        default = Label("@rules_elixir//impl:localhex")
+    )
 }
 
 # We will produce fragments of the final _build directory in multiple separate steps,
@@ -21,366 +27,301 @@ BuildOverlay = provider(
     doc = "Provider for a directory which mirrors the Mix _build structure",
     fields = {
         # "root_dir": "(File) the actual build directory, e.g. .../_build/dev",
-        "structure": "(list<struct<relative: string, location: File>>) each logical subdirectory of the root and its real location",
+        #"structure": "(list<struct<app_name: string, relative: string, location: File>>) each logical subdirectory of the root and its real location",
+        "structure": "xD"
     }
 )
 
-# helper to compute application ebin directories within the build directory
-def ebin_for_app(app):
-    return "lib/{}/ebin".format(app)
+def structure_to_elixir(structure):
+    return ",".join([
+        "{" + repr(rel) + ", " + repr(f.path) + "}"
+        for (rel, f) in structure.items()
+    ])
 
-# assumes that you have been passed _mix_project_attrs
-def declare_build_root(ctx):
-    out_name = ctx.label.name + "/" + ctx.attr.build_path
-    return (out_name, ctx.actions.declare_directory(out_name))
+def combine_structures(structures):
+    return dict([
+        tup
+        for s in structures
+        for tup in s.items()
+    ])
+                 
 
 # assumes that you have been passed _mix_project_attrs
 def run_mix_task(ctx,
-               extra_inputs = [],
-               output_dir = None,
-               extra_outputs = [],
-               task = None,
-               args = None,
-               extra_elixir_code = ":ok",
-               **kwargs):
+                 inputs = [],
+                 deps = [],
+                 output_structure = [],
+                 subdir = "", 
+                 task = None,
+                 args = None,
+                 **kwargs):
+
+    output_name = "{}_mix_{}".format(ctx.label.name, task)
+    mix_runner = ctx.actions.declare_file("{}_runner.exs".format(output_name))
+    deps_structure = combine_structures([d[BuildOverlay].structure for d in deps])
+
+    ctx.actions.expand_template(
+        template = ctx.file._mix_runner_template,
+        output = mix_runner,
+        substitutions = {
+            "{project_dir}": ctx.file.mixfile.dirname,
+            "{subdir}": subdir,
+            "{outputs_list_body}": structure_to_elixir(output_structure),
+            "{deps_list_body}": structure_to_elixir(deps_structure),
+        }
+    )
+
     elixir_args = ctx.actions.args()
     elixir_args.add_all([
-        "elixir", "-e",
-        """
-        dest = Path.absname("{out_dir}")
-        here = File.cwd!()
-        File.cd!("{project_dir}")
-        Mix.start
-        Mix.CLI.main
-        File.cd!(here, fn -> {more} end)
-        # this is a hack in case we didn't produce output
-        if !File.exists?("{build_path}"), do: :erlang.halt(0)
-        File.cd!("{build_path}")
-        args = List.flatten ["-r", File.ls!(), dest]
-        0 = System.cmd("cp", args) |> elem(1)
-        """.format(
-            project_dir = ctx.file.mixfile.dirname,
-            build_path = ctx.attr.build_path,
-            out_dir = output_dir.path,
-            more = extra_elixir_code,
-        ),
+        "elixir",
+        mix_runner.path,
         task,
     ])
 
+    mix_home = ctx.attr._mix_home.files.to_list()[0]
     ctx.actions.run(
         executable = ctx.executable._elixir_tool,
         arguments = [elixir_args, args or ctx.actions.args()],
         inputs = (
-            ctx.files.mixfile
+            [mix_runner, mix_home]
+            + inputs
+            + deps_structure.values()
+            + ctx.files.mixfile
             + ctx.files.lockfile
             + ctx.files.apps_mixfiles
-            + ctx.files.deps_tree
-            + extra_inputs
+            + ctx.files.config_tree
         ),
-        outputs = [output_dir] + extra_outputs,
-        use_default_shell_env = True,
+        outputs = output_structure.values(),
+        #use_default_shell_env = True,
+        env = {
+            "HOME": mix_home.path,
+            "PATH": "/bin/:/usr/bin/:/usr/local/bin",
+            "MIX_ENV": ctx.attr.mix_env,
+        },
         **kwargs
     )
 
-
-
 ################################################################
-# `mix_third_party_deps` rule
-# compile ALL third_party deps as a single unit
-# simpler to implement and avoids duplicate work if one dep depends on another
-def _mix_third_party_deps_impl(ctx):
-    out_name, out_dir = declare_build_root(ctx)
-
-    # declare the structure of our generated _build directory and create the actual files
-    subdirs = [ebin_for_app(dep) for dep in ctx.attr.deps_names]
-    structure = [
-        struct(
-            relative = subdir,
-            location = ctx.actions.declare_directory("{}/{}".format(out_name, subdir))
-        )
-        for subdir in subdirs
-    ]
-    ebin_dirs = [e.location for e in structure]
-
-    args = ctx.actions.args()
-    args.add_all(ctx.attr.deps_names)
-    run_mix_task(
-        ctx,
-        progress_message = "Compiling {} third-party Mix dependencies".format(len(ctx.attr.deps_names)),
-        output_dir = out_dir,
-        extra_outputs = ebin_dirs,
-        task = "deps.compile",
-        args = args,
-    )
-
-    generated = depset(ebin_dirs)
-    return [
-        ElixirLibrary(
-            loadpath = generated,
-            runtime_deps = depset([]),
-        ),
-        BuildOverlay(
-            # root_dir = out_dir,
-            structure = structure,
-        ),
-        DefaultInfo(
-            files = generated,
-        )
-    ]
-
-mix_third_party_deps = rule(
-    _mix_third_party_deps_impl,
-    attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items()),
-)
-
-################################################################
-# `elixir_link1` rule
-# Compiles and "links" a single application into a build directory fragment
-# in case of a regular Mix project, this is just called once for the single application
-# in case of an umbrella it is called once for each child application
-_elixir_link1_attrs = {
-    "app_name": attr.string(),
-    "libs": attr.label_list(),
+# primitive mix invocation rule
+# used to download hex and rebar and provide them to the real mix_task rule
+# kind of a hack
+_prim_mix_invoke_attrs = {
+    "args": attr.string_list(),
 }
 
-def _elixir_link1_impl(ctx):
-    out_name, out_dir = declare_build_root(ctx)
-
-    subdir = ebin_for_app(ctx.attr.app_name)
-    ebin_dir = ctx.actions.declare_directory("{}/{}".format(out_name, subdir))
-
-    lib_loadpaths = depset(transitive = [lib[ElixirLibrary].loadpath for lib in ctx.attr.libs])
-    args = ctx.actions.args()
-    args.add(ebin_dir.path)
-    args.add_all(lib_loadpaths, expand_directories = True)
-    ctx.actions.run_shell(
-        inputs = lib_loadpaths,
-        outputs = [out_dir, ebin_dir],
-        arguments = [args],
-        command = """
-        OUT=$1 ; shift
-        cp $@ $OUT
-        """
+def _prim_mix_invoke_impl(ctx):
+    mixhome = ctx.actions.declare_directory("fake_mix_home")
+    prim_mix_script = """
+    abs_home = Path.absname(System.get_env("HOME"))
+    System.put_env("MIX_HOME", abs_home <> "/.mix")
+    Mix.start
+    Mix.CLI.main
+    """
+    
+    ctx.actions.run(
+        executable = ctx.executable._elixir_tool,
+        arguments = ["elixir", "-e", prim_mix_script, "--"] + ctx.attr.args,
+        outputs = [mixhome],
+        env = {
+            "HOME": mixhome.path
+        },
     )
 
     return [
-        ElixirLibrary(
-            loadpath = depset([ebin_dir]),
-            runtime_deps = depset([]),
-        ),
-        BuildOverlay(
-            structure = [
-                struct(
-                    relative = subdir,
-                    location = ebin_dir
-                ),
-            ]
-        ),
         DefaultInfo(
-            files = depset([ebin_dir])
+            files = depset([mixhome])
         ),
     ]
 
-elixir_link1 = rule(
-    _elixir_link1_impl,
-    attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items() + _elixir_link1_attrs.items()),
+prim_mix_invoke = rule(
+    _prim_mix_invoke_impl,
+    attrs = dict(elixir_common_attrs.items() + _prim_mix_invoke_attrs.items()),
 )
 
-################################################################
-# `elixir_merge_overlays` rule
-# "Linker" step where we combine multiple BuildOverlays into a single
 
-_elixir_merge_overlays_attrs = {
-    "overlays": attr.label_list(),
+################################################################
+
+_mix_project_tarball_attrs = {
+    "prefix": attr.string(),
+    "deps": attr.label_list(allow_files = True),
 }
 
-def overlay_entry_args(entry):
-    return [entry.relative, entry.location.path]
+def _mix_project_tarball_impl(ctx):
+    out = ctx.actions.declare_file(ctx.label.name + ".tar")
+    mix_home = ctx.attr._mix_home.files.to_list()[0]
 
-def _elixir_merge_overlays_impl(ctx):
-    out_name, out_dir = declare_build_root(ctx)
-    combined_structure = [
-        entry
-        for overlay in ctx.attr.overlays
-        for entry in overlay[BuildOverlay].structure
-    ]
-    args = ctx.actions.args()
-    args.add(out_dir.path)
-    args.add_all(combined_structure, map_each = overlay_entry_args)
-    ctx.actions.run_shell(
-        inputs = [e.location for e in combined_structure],
-        outputs = [out_dir],
-        arguments = [args],
-        command = """
-        OUT=$1 ; shift
-        while (($#)); do
-          REL=$OUT/$1 ; shift
-          SRC=$1 ; shift
-          mkdir -p $REL
-          cp -r $SRC/* $REL
-        done
-        """
+    command = """
+    tar -chf {out} --exclude='{root}' * -C {root}/{prefix} _build deps &&
+    tar -rhf {out} -C {mixhome_dir} {mixhome}
+    """.format(
+        root = out.root.path,
+        mixhome_dir = mix_home.dirname,
+        mixhome = mix_home.basename,
+        prefix = ctx.attr.prefix,
+        out = out.path,
     )
 
+    ctx.actions.run_shell(
+        inputs = depset(direct = [mix_home],
+                        transitive = [d.files for d in ctx.attr.deps]),
+        outputs = [out],
+        command = command
+    )
     return [
         DefaultInfo(
-            files = depset([out_dir]),
-        ),
-        BuildOverlay(
-            structure = combined_structure,
-        ),
-        ElixirLibrary(
-            loadpath = depset([e.location for e in combined_structure]),
-            runtime_deps = depset([]),
-        ),
+            files = depset([out]),
+        )
     ]
+
+mix_project_tarball = rule(
+    _mix_project_tarball_impl,
+    attrs = dict(_mix_project_tarball_attrs.items() + _mix_project_attrs.items()),
+)
     
 
-elixir_merge_overlays = rule(
-    _elixir_merge_overlays_impl,
-    attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items() + _elixir_merge_overlays_attrs.items()),
-)
-
-
 ################################################################
-# `mix_compile_app` rule
-# step to invoke mix compile.app 
-_mix_compile_app_attrs = {
-    "apps": attr.string_list(),
+
+_mix_task_attrs = {
+    "prefix": attr.string(),
+    "subdir": attr.string(default = ""),
+    "task": attr.string(),
+    "args": attr.string_list(),
+    "input_tree": attr.label_list(allow_files = True),
+    "deps": attr.label_list(),
+    "my_output_list": attr.output_list(allow_empty = True),
 }
 
-def _mix_compile_app_impl(ctx):
-    out_name, out_dir = declare_build_root(ctx)
-
-    subdirs = [ebin_for_app(app) for app in ctx.attr.apps]
-    structure = [
-        struct(
-            relative = subdir,
-            location = ctx.actions.declare_directory("{}/{}".format(out_name, subdir))
-        )
-        for subdir in subdirs
-    ]
-    ebin_dirs = [e.location for e in structure]
-
+def _mix_task_impl(ctx):
+    package_component = ctx.label.package + "/" if len(ctx.label.package) > 0 else ""
+    outputs_root = ctx.bin_dir.path + "/" + package_component + ctx.attr.prefix + "/"
+    outputs_rel = dict([(s.path[len(outputs_root):], s) for s in ctx.outputs.my_output_list])
     args = ctx.actions.args()
-    args.add_all(["deps.loadpaths", "--no-deps-check", ",", "compile.app"])
-    args.add_all(ctx.attr.apps)
-
+    args.add_all(ctx.attr.args)
+    
     run_mix_task(
         ctx,
-        output_dir = out_dir,
-        extra_outputs = ebin_dirs,
-        task = "do",
+        inputs = ctx.files.input_tree,
+        output_structure = outputs_rel,
+        deps = ctx.attr.deps,
+        subdir = ctx.attr.subdir,
+        task = ctx.attr.task,
         args = args,
     )
+
     return [
         DefaultInfo(
-            files = depset(ebin_dirs),
+            files = depset(outputs_rel.values())
         ),
         BuildOverlay(
-            structure = structure,
-        ),
-    ]
-
-mix_compile_app = rule(
-    _mix_compile_app_impl,
-    attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items() + _mix_compile_app_attrs.items()),
-)
-
-################################################################
-# `mix_gen_config` rule
-# step to invoke mix compile.app and create dummy source file which
-# loads the configuration at compile-time.
-_mix_gen_config_attrs = {
-    "apps": attr.string_list(),
-}
-
-def _mix_gen_config_impl(ctx):
-    out_name, out_dir = declare_build_root(ctx)
-    config_file = ctx.actions.declare_file(ctx.label.name + "/config_loader.exs")
-
-    run_mix_task(
-        ctx,
-        extra_inputs = ctx.files.config_tree,
-        output_dir = out_dir,
-        extra_outputs = [config_file],
-        task = "loadconfig",
-        extra_elixir_code = """
-        configs = 
-          for app <- [{apps}] do
-            {{app, :application.get_all_env(app)}}
-          end
-        File.write!("{config_file}", [":application.set_env ", inspect(configs, limit: :infinity)])
-        """.format(
-            config_file = config_file.path,
-            apps = ", ".join([":" + app for app in ctx.attr.apps])
+            structure = outputs_rel
         )
-    )
-    return [
-        DefaultInfo(
-            files = depset([out_dir, config_file]),
-        ),
-        ElixirLibrary(
-            loadpath = depset([]),
-            extra_sources = [config_file],
-        ),
     ]
 
-mix_gen_config = rule(
-    _mix_gen_config_impl,
-    attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items() + _mix_gen_config_attrs.items()),
+mix_task = rule(
+    _mix_task_impl,
+    attrs = dict(elixir_common_attrs.items() + _mix_project_attrs.items() + _mix_task_attrs.items()),
 )
 
 def merge(d, **kwargs):
     return dict(kwargs, **d)
 
-def link_target(app):
-    return app + "_link"
+def external_dep_target(dep_name):
+    return "external_dep_" + dep_name
+
+def target_for_app(app, info):
+    c, _ = info["path"].split("/", maxsplit = 2)
+    if c == "apps":
+        return app
+    elif c == "deps":
+        return "third_party_" + app
+    else: return "first_party_" + app
+
+def manager(info):
+    return info["manager"] if "manager" in info else "???"
 
 def mix_project(name = None,
-                deps_path = None,
                 apps_path = None,
+                deps_graph = {},
                 apps_targets = {},
                 mix_env = None,
                 **kwargs):
 
+    config_tree = native.glob(["**/config/*.exs"])
     mix_attrs = merge(
         kwargs,
+        mix_env = mix_env,
         mixfile = "mix.exs",
         lockfile = "mix.lock",
-        deps_tree = native.glob(["{}/**".format(deps_path)]),
-        apps_mixfiles = native.glob(["{}/*/mix.exs".format(apps_path)]),
-        config_tree = native.glob(["**/config/*.exs"]),
+        apps_mixfiles = native.glob(["{}/{}".format(info["path"], build_file)
+                                     for info in deps_graph.values()
+                                     for build_file in ["mix.exs", "rebar.config",
+                                                        "rebar.config.script", "rebar.lock",
+                                                        "Makefile",
+                                     ]]),
+        config_tree = config_tree,
         visibility = ["//visibility:public"],
     )
-    third_party_target = "third_party"
-    mix_third_party_deps(name = third_party_target, **mix_attrs)
 
-    for app, targets in apps_targets.items():
-        elixir_link1(
-            name = link_target(app),
-            app_name = app,
-            libs = targets,
-            **mix_attrs
+    apps_targets = dict([
+        (app, name + "_" + target_for_app(app, info))
+        for (app, info) in deps_graph.items()
+    ])
+
+    for app, info in deps_graph.items():
+        task_attrs = merge(
+            mix_attrs,
+            name = apps_targets[app],
+            prefix = name,
+            deps = [apps_targets[d] for d in info["inputs"] if d != app],
+            input_tree = native.glob(["{}/**".format(info["path"])]),
         )
         
-    compile_app_target = "compile_app"
-    mix_compile_app(
-        name = compile_app_target,
-        apps = apps_targets.keys(),
+        if info["in_umbrella"]:
+            mix_task(
+                subdir = "apps/" + app,
+                task = "compile",
+                args = ["--no-deps-check", "--force"],
+                my_output_list = ["{}/_build/{}/lib/{}".format(name, mix_env, app)],
+                **task_attrs
+            )
+        else:
+            mix_task(
+                task = "deps.compile",
+                args = [app],
+                # deps that are not managed by mix are compiled in place, so we have to re-export their source directory
+                my_output_list = ["{}/_build/{}/lib/{}".format(name, mix_env, app)] + (["{}/deps/{}".format(name, app)] if manager(info) != "mix" else []),
+                **task_attrs
+            )
+
+    mix_task(
+        name = name + "_compile",
+        task = "compile",
+        args = ["--no-deps-check"],
+        deps = [apps_targets[d] for d in deps_graph.keys()],
+        prefix = name,
+        my_output_list = ["{}/_build/{}/consolidated".format(name, mix_env)],
         **mix_attrs
     )
 
-    gen_config_target = "config"
-    mix_gen_config(
-        name = gen_config_target,
-        apps = apps_targets.keys(),
-        **mix_attrs
-    )
+    _copied_dirs = [info["path"].split("/", maxsplit = 2)[0] for info in deps_graph.values()]
+    copied_dirs = depset([d for d in _copied_dirs if d != "deps"])
 
-    elixir_merge_overlays(
-        name = "all",
-        overlays = [third_party_target, compile_app_target] + [link_target(app) for app in apps_targets.keys()],
+    # filter out the transitive non-mix deps that we are exposing from their compile target
+    copied_deps = [
+        "/".join(info["path"].split("/", maxsplit = 3)[:2])
+        for info in deps_graph.values()
+        if manager(info) == "mix"
+    ]
+
+    mix_project_tarball(
+        name = name + "_tarball",
+        prefix = name,
+        deps = depset(
+            direct = native.glob(["mix.*"]) + config_tree + [apps_targets[d] for d in deps_graph.keys()],
+            transitive = [
+                depset(native.glob([d+"/**"]))
+                for d in ["config"] + copied_dirs.to_list() + copied_deps
+            ]),
         **mix_attrs
     )
 

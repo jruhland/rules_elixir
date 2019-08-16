@@ -8,6 +8,7 @@ _elixir_build_cmd = """
     cd external/elixir
     cd `dirname $$(readlink Makefile)`
     ELIXIR_ROOT=`pwd`
+    export LANG=C.UTF-8
     HOME=. make compile
     cd $$GEN_ROOT
     mkdir $(OUTS)

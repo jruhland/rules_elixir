@@ -17,15 +17,16 @@ def elixir_rules_dependencies():
     new_git_repository(
         name = "elixir",
         remote = "https://github.com/elixir-lang/elixir.git",
-        commit = "333ebbe13b81a250765cb2174bb9158f64d1a10d",
+        commit = "511a51ba8925daa025d3c2fd410e170c1b651013", # v1.8.1
+        #commit = "333ebbe13b81a250765cb2174bb9158f64d1a10d", # random 1.9 dev commit
         #commit = "459319fb751f81399b6e3826789782452ea5c3c9",
         build_file = "@rules_elixir//:elixir.BUILD",
     )
     
     # new_git_repository(
     #     name = "elixir",
-    #     remote = "/Users/russell/cloned/elixir/",
-    #     commit = "4e9db06d049ecc05fbcef9615d203553565ca61a",
+    #     remote = "/elixir",
+    #     commit = "f6b5fa311d430d30b33078be8cefbf5777976ca4",
     #     build_file = "@rules_elixir//:elixir.BUILD",
     # )
 

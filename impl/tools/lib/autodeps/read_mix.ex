@@ -11,38 +11,11 @@ defmodule RulesElixir.Tools.ReadMix do
 
     dep_tree =
       deps_map
-      |> Enum.map(fn {app, dep} ->
-        dest = dep.opts[:dest]
-        app_name = to_string(app)
-        rel_path = ensure_relative(dest, cwd)
-
-        cond do
-          app_name != Path.basename(dest) ->
-            IO.warn("dependency #{app} is not in a directory of the same name")
-
-          is_nil(rel_path) ->
-            IO.warn("dependency #{app} comes from outside current directory")
-
-          true ->
-            deps_names = dep.deps
-	    #|> Enum.filter(fn d -> Map.has_key?(deps_map, d.app) end)
-	    |> Enum.filter(fn d -> !d.opts[:only] or Mix.env() == d.opts[:only] end)
-	    |> Enum.map(fn d -> to_string(d.app) end)
-	    |> Enum.sort()
-
-            {app_name,
-             %{
-               path: rel_path,
-               deps: deps_names,
-               inputs:
-                 transitive_deps(deps_map, app)
-                 |> Stream.uniq()
-                 |> Stream.map(&to_string/1)
-                 |> Enum.sort(),
-               in_umbrella: !!dep.opts[:from_umbrella],  # supposed to be `:from_umbrella` here 
-	       manager: dep.manager,
-             }}
-        end
+      |> Enum.map(fn {app, _} ->
+        Task.async(fn -> info_for_dep(cwd, deps_map, app) end)
+      end)
+      |> Enum.map(fn task ->
+	Task.await(task, :infinity)
       end)
       |> Enum.sort_by(fn {app, _} -> app end)
 
@@ -60,6 +33,42 @@ defmodule RulesElixir.Tools.ReadMix do
           deps_graph: %Bazel.Map{kvs: dep_tree},
         ]
     }
+  end
+
+  defp info_for_dep(cwd, deps_map, app) do
+    dep = deps_map[app]
+    dest = dep.opts[:dest]
+    app_name = to_string(app)
+    rel_path = ensure_relative(dest, cwd)
+
+    cond do
+      app_name != Path.basename(dest) ->
+        IO.warn("dependency #{app} is not in a directory of the same name")
+
+      is_nil(rel_path) ->
+        IO.warn("dependency #{app} comes from outside current directory")
+
+      true ->
+        deps_names = dep.deps
+	#|> Enum.filter(fn d -> Map.has_key?(deps_map, d.app) end)
+	|> Enum.filter(fn d -> !d.opts[:only] or Mix.env() == d.opts[:only] end)
+	|> Enum.map(fn d -> to_string(d.app) end)
+	|> Enum.sort()
+
+        {app_name,
+         %{
+           path: rel_path,
+           #deps: deps_names,
+           inputs:
+           transitive_deps(deps_map, app)
+           |> Stream.uniq()
+           |> Stream.map(&to_string/1)
+           |> Enum.sort(),
+           in_umbrella: !!dep.opts[:from_umbrella],  # supposed to be `:from_umbrella` here 
+	   manager: dep.manager,
+         }}
+    end
+
   end
 
   def transitive_deps(deps_map, app) do

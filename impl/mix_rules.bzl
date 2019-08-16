@@ -106,7 +106,7 @@ def run_mix_task(ctx,
 # used to download hex and rebar and provide them to the real mix_task rule
 # kind of a hack
 _prim_mix_invoke_attrs = {
-    "args": attr.string_list()
+    "args": attr.string_list(),
 }
 
 def _prim_mix_invoke_impl(ctx):
@@ -138,6 +138,46 @@ prim_mix_invoke = rule(
     attrs = dict(elixir_common_attrs.items() + _prim_mix_invoke_attrs.items()),
 )
 
+
+################################################################
+
+_mix_project_tarball_attrs = {
+    "prefix": attr.string(),
+    "deps": attr.label_list(allow_files = True),
+}
+
+def _mix_project_tarball_impl(ctx):
+    out = ctx.actions.declare_file(ctx.label.name + ".tar")
+    mix_home = ctx.attr._mix_home.files.to_list()[0]
+
+    command = """
+    tar -chf {out} --exclude='{root}' * -C {root}/{prefix} _build deps &&
+    tar -rhf {out} -C {mixhome_dir} {mixhome}
+    """.format(
+        root = out.root.path,
+        mixhome_dir = mix_home.dirname,
+        mixhome = mix_home.basename,
+        prefix = ctx.attr.prefix,
+        out = out.path,
+    )
+
+    ctx.actions.run_shell(
+        inputs = depset(direct = [mix_home],
+                        transitive = [d.files for d in ctx.attr.deps]),
+        outputs = [out],
+        command = command
+    )
+    return [
+        DefaultInfo(
+            files = depset([out]),
+        )
+    ]
+
+mix_project_tarball = rule(
+    _mix_project_tarball_impl,
+    attrs = dict(_mix_project_tarball_attrs.items() + _mix_project_attrs.items()),
+)
+    
 
 ################################################################
 
@@ -196,6 +236,9 @@ def target_for_app(app, info):
         return "third_party_" + app
     else: return "first_party_" + app
 
+def manager(info):
+    return info["manager"] if "manager" in info else "???"
+
 def mix_project(name = None,
                 apps_path = None,
                 deps_graph = {},
@@ -203,6 +246,7 @@ def mix_project(name = None,
                 mix_env = None,
                 **kwargs):
 
+    config_tree = native.glob(["**/config/*.exs"])
     mix_attrs = merge(
         kwargs,
         mix_env = mix_env,
@@ -214,7 +258,7 @@ def mix_project(name = None,
                                                         "rebar.config.script", "rebar.lock",
                                                         "Makefile",
                                      ]]),
-        config_tree = native.glob(["**/config/*.exs"]),
+        config_tree = config_tree,
         visibility = ["//visibility:public"],
     )
 
@@ -223,30 +267,30 @@ def mix_project(name = None,
         for (app, info) in deps_graph.items()
     ])
 
-    for dep_app, info in deps_graph.items():
+    for app, info in deps_graph.items():
+        task_attrs = merge(
+            mix_attrs,
+            name = apps_targets[app],
+            prefix = name,
+            deps = [apps_targets[d] for d in info["inputs"] if d != app],
+            input_tree = native.glob(["{}/**".format(info["path"])]),
+        )
+        
         if info["in_umbrella"]:
             mix_task(
-                name = apps_targets[dep_app],
-                subdir = "apps/" + dep_app,
+                subdir = "apps/" + app,
                 task = "compile",
                 args = ["--no-deps-check", "--force"],
-                deps = [apps_targets[d] for d in info["inputs"] if d != dep_app],
-                input_tree = native.glob(["{}/**".format(info["path"])]),
-                prefix = name,
-                my_output_list = ["{}/_build/{}/lib/{}".format(name, mix_env, dep_app)],
-                **mix_attrs
+                my_output_list = ["{}/_build/{}/lib/{}".format(name, mix_env, app)],
+                **task_attrs
             )
         else:
             mix_task(
-                name = apps_targets[dep_app],
                 task = "deps.compile",
-                args = [dep_app],
-                deps = [apps_targets[d] for d in info["inputs"] if d != dep_app],
-                input_tree = native.glob(["{}/**".format(info["path"])]),
+                args = [app],
                 # deps that are not managed by mix are compiled in place, so we have to re-export their source directory
-                prefix = name,
-                my_output_list = ["{}/_build/{}/lib/{}".format(name, mix_env, dep_app)] + (["{}/deps/{}".format(name, dep_app)] if "manager" in info and info["manager"] != "mix" else []),
-                **mix_attrs
+                my_output_list = ["{}/_build/{}/lib/{}".format(name, mix_env, app)] + (["{}/deps/{}".format(name, app)] if manager(info) != "mix" else []),
+                **task_attrs
             )
 
     mix_task(
@@ -259,5 +303,25 @@ def mix_project(name = None,
         **mix_attrs
     )
 
-    
+    _copied_dirs = [info["path"].split("/", maxsplit = 2)[0] for info in deps_graph.values()]
+    copied_dirs = depset([d for d in _copied_dirs if d != "deps"])
+
+    # filter out the transitive non-mix deps that we are exposing from their compile target
+    copied_deps = [
+        "/".join(info["path"].split("/", maxsplit = 3)[:2])
+        for info in deps_graph.values()
+        if manager(info) == "mix"
+    ]
+
+    mix_project_tarball(
+        name = name + "_tarball",
+        prefix = name,
+        deps = depset(
+            direct = native.glob(["mix.*"]) + config_tree + [apps_targets[d] for d in deps_graph.keys()],
+            transitive = [
+                depset(native.glob([d+"/**"]))
+                for d in ["config"] + copied_dirs.to_list() + copied_deps
+            ]),
+        **mix_attrs
+    )
 

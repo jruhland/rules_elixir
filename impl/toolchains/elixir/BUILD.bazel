@@ -32,3 +32,9 @@ platform(
         "@platforms//cpu:x86_64",
     ],
 )
+
+filegroup(
+    name = "distribution",
+    srcs = glob(["**"]),
+    visibility = ["//:__subpackages__"],
+)

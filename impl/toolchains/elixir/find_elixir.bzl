@@ -1,8 +1,8 @@
 # Rule which exposes `elixir` from your PATH as a elixir toolchain.
 # This is the default elixir toolchain unless you specify another platform (see this pkg BUILD)
 
-load(":common.bzl", "add_otp_toolchain_to_path", "elixir_core_apps")
-load("//impl:common.bzl", "ElixirLibrary", "elixir_common_attrs")
+load("@rules_elixir//impl/toolchains/elixir:common.bzl", "add_otp_toolchain_to_path", "elixir_core_apps")
+load("@rules_elixir//impl:common.bzl", "ElixirLibrary", "elixir_common_attrs")
 
 def _find_elixir_impl(ctx):
     outs = {app: ctx.actions.declare_directory("{}/{}".format(ctx.label.name, app)) for app in elixir_core_apps}

@@ -1,0 +1,9 @@
+filegroup(
+    name = "distribution",
+    srcs = glob(["**"]) + [
+        "//impl/toolchains/elixir:distribution",
+        "//impl/toolchains/otp:distribution",
+        "//impl/tools:distribution",
+    ],
+    visibility = ["//:__subpackages__"],
+)

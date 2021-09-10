@@ -1,4 +1,4 @@
-load("//impl:elixir_rules.bzl", "elixir_iex", "elixir_script_test")
+load("@rules_elixir//impl:elixir_rules.bzl", "elixir_iex", "elixir_script_test")
 
 def _expand_template_impl(ctx):
     template_file = ctx.file.template_file

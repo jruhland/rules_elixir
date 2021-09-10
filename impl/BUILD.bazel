@@ -5,3 +5,12 @@ config_setting(
         "@rules_elixir//impl/toolchains/elixir:1.9.4",
     ],
 )
+
+filegroup(
+    name = "distribution",
+    srcs = glob(["**"]) + [
+        "//impl/toolchains:distribution",
+        "//impl/tools:distribution",
+    ],
+    visibility = ["//:__pkg__"],
+)

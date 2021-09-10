@@ -1,5 +1,5 @@
-load(":common.bzl", "erts_headers_cc_library", "query_local_erlang_install")
-load(":otp_version.bzl", "otp_versions")
+load("@rules_elixir//impl/toolchains/otp:common.bzl", "erts_headers_cc_library", "query_local_erlang_install")
+load("@rules_elixir//impl/toolchains/otp:otp_version.bzl", "otp_versions")
 # Repository rule which exposes erlang/OTP from your PATH as an erlang toolchain
 # (or does nothing if you don't have it)
 

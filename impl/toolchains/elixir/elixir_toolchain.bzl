@@ -1,4 +1,3 @@
-load("@rules_elixir//impl:providers.bzl", "OTPInfo")
 load("@rules_elixir//impl:common.bzl", "ElixirLibrary")
 
 def _elixir_toolchain_impl(ctx):

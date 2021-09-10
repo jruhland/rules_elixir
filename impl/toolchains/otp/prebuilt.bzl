@@ -1,4 +1,4 @@
-load(":common.bzl", "erts_headers_cc_library", "query_erlang_version_info", "query_local_erlang_install")
+load("@rules_elixir//impl/toolchains/otp:common.bzl", "erts_headers_cc_library", "query_erlang_version_info", "query_local_erlang_install")
 
 # Repository rule to expose a binary OTP release which was already compiled outside of bazel,
 # as an erlang_toolchain.

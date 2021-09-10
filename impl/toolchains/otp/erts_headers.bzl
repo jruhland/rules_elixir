@@ -1,5 +1,3 @@
-load("@rules_elixir//impl:providers.bzl", "OTPInfo")
-
 def _erts_headers_impl(ctx):
     erlang_toolchain = ctx.toolchains["@rules_elixir//impl/toolchains/otp:toolchain_type"].otpinfo
     return [

@@ -1,8 +1,9 @@
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
-load("//impl/toolchains/otp:prebuilt.bzl", "prebuilt_otp_release")
-load("//impl/toolchains/elixir:from_source.bzl", "elixir_source_archive")
-load("//impl/toolchains/elixir:from_system.bzl", "elixir_from_system_path")
-load("//impl/toolchains/otp:from_system.bzl", "erlang_from_system_path")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
+load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
+load("@rules_elixir//impl/toolchains/otp:prebuilt.bzl", "prebuilt_otp_release")
+load("@rules_elixir//impl/toolchains/elixir:from_source.bzl", "elixir_source_archive")
+load("@rules_elixir//impl/toolchains/elixir:from_system.bzl", "elixir_from_system_path")
+load("@rules_elixir//impl/toolchains/otp:from_system.bzl", "erlang_from_system_path")
 
 def define_toolchains():
     elixir_source_archive(
@@ -52,6 +53,16 @@ def define_toolchains():
         ],
     )
 
+    maybe(
+        http_archive,
+        name = "rules_pkg",
+        urls = [
+            "https://mirror.bazel.build/github.com/bazelbuild/rules_pkg/releases/download/0.2.4/rules_pkg-0.2.4.tar.gz",
+            "https://github.com/bazelbuild/rules_pkg/releases/download/0.2.4/rules_pkg-0.2.4.tar.gz",
+        ],
+        sha256 = "4ba8f4ab0ff85f2484287ab06c0d871dcb31cc54d439457d28fd4ae14b18450a",
+    )
+
 def register_elixir_toolchains():
     native.register_toolchains(
         # These rules may or may not actually define a toolchain so we use //...
@@ -68,14 +79,16 @@ def register_elixir_toolchains():
 def rules_elixir_dependencies():
     define_toolchains()
 
-    http_file(
+    maybe(
+        http_file,
         name = "hex",
         downloaded_file_path = "hex-0.20.5.ez",
         urls = ["https://repo.hex.pm/installs/1.8.0/hex-0.20.5.ez"],
         sha256 = "1a3363e4e53d688361eeba8486a24fcd26c389601f1772e822014c79092ab41b",
     )
 
-    http_file(
+    maybe(
+        http_file,
         name = "rebar",
         urls = ["https://repo.hex.pm/installs/1.0.0/rebar-2.6.2"],
         downloaded_file_path = "rebar",
@@ -83,19 +96,11 @@ def rules_elixir_dependencies():
         sha256 = "d3eddf77b8448620a650c6d68fd2c4dc01a9060cc808ee0c3f330960dc108a56",
     )
 
-    http_file(
+    maybe(
+        http_file,
         name = "rebar3",
         urls = ["https://repo.hex.pm/installs/1.0.0/rebar3-3.5.1"],
         downloaded_file_path = "rebar3",
         executable = True,
         sha256 = "a196c84a860bea5d5e68d0146cb04aa0f55332c640f3895a5400a05d684915a1",
-    )
-
-    # In case anyone is not satisfied with `erl` not reaping zombies in their containers
-    http_file(
-        name = "tini",
-        urls = ["https://github.com/krallin/tini/releases/download/v0.19.0/tini-amd64"],
-        downloaded_file_path = "tini",
-        executable = True,
-        sha256 = "93dcc18adc78c65a028a84799ecf8ad40c936fdfc5f2a57b1acda5a8117fa82c",
     )

@@ -1,4 +1,4 @@
-load("//impl:elixir_rules.bzl", "elixir_cli_tool", "elixir_iex", "elixir_library", "elixir_prebuilt_library", "elixir_script")
+load("@rules_elixir//impl:elixir_rules.bzl", "elixir_cli_tool", "elixir_iex", "elixir_library", "elixir_prebuilt_library", "elixir_script")
 
 elixir_script(
     name = "elixir_prim_compiler",
@@ -109,3 +109,11 @@ exports_files([
     "copy_elixir_itself.ex",
     "beam_stripper.ex",
 ])
+
+filegroup(
+    name = "distribution",
+    srcs = glob(["**"]) + [
+        "//impl/tools/autodeps:distribution",
+    ],
+    visibility = ["//:__subpackages__"],
+)

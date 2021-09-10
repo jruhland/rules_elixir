@@ -1,6 +1,22 @@
-load("//impl:elixir_rules.bzl", "elixir_script")
+load("@rules_elixir//impl:elixir_rules.bzl", "elixir_script")
 
-exports_files(["elixir_script.template"])
+exports_files([
+    "elixir_script.template",
+    "version.bzl",
+])
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "distribution",
+    srcs = [
+        "BUILD.bazel",
+        "deps.bzl",
+        "elixir_script.template",
+        "//impl:distribution",
+    ],
+    visibility = ["//distro:__pkg__"],
+)
 
 genrule(
     name = "elixir_runfiles.bash",

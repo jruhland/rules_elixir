@@ -1,8 +1,8 @@
 # Special rule just for building Elixir itself from source
 # Note: not perfectly deterministic
 
-load("//impl:common.bzl", "ElixirLibrary", "elixir_common_attrs")
-load(":common.bzl", "add_otp_toolchain_to_path", "elixir_core_apps")
+load("@rules_elixir//impl:common.bzl", "ElixirLibrary", "elixir_common_attrs")
+load("@rules_elixir//impl/toolchains/elixir:common.bzl", "add_otp_toolchain_to_path", "elixir_core_apps")
 
 def _build_elixir_impl(ctx):
     outs = {app: ctx.actions.declare_directory("{}/{}".format(ctx.label.name, app)) for app in elixir_core_apps}

@@ -1,6 +1,6 @@
-load("//impl:common.bzl", "ElixirLibrary", "elixir_common_attrs")
-load("//impl:providers.bzl", "MixBuild", "MixDepsCached", "MixLock", "MixProject")
-load("//impl:mix_lock.bzl", "add_mix_deps_to_args")
+load("@rules_elixir//impl:common.bzl", "ElixirLibrary", "elixir_common_attrs")
+load("@rules_elixir//impl:providers.bzl", "MixBuild", "MixDepsCached", "MixLock", "MixProject")
+load("@rules_elixir//impl:mix_lock.bzl", "add_mix_deps_to_args")
 
 # All of the weird and wonderful files you might encounter while building dependencies
 project_build_file_names = [

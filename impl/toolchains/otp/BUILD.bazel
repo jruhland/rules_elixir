@@ -1,0 +1,7 @@
+load("@rules_elixir//impl/toolchains/otp:otp_version.bzl", "define_constraint")
+
+package(default_visibility = ["//visibility:public"])
+
+toolchain_type(name = "toolchain_type")
+
+define_constraint()

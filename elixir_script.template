@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# --- begin runfiles.bash initialization ---
+# Copy-pasted from Bazel's Bash runfiles library (tools/bash/runfiles/runfiles.bash).
+set -euo pipefail
+if [[ ! -d "${RUNFILES_DIR:-/dev/null}" && ! -f "${RUNFILES_MANIFEST_FILE:-/dev/null}" ]]; then
+    if [[ -f "$0.runfiles_manifest" ]]; then
+        export RUNFILES_MANIFEST_FILE="$0.runfiles_manifest"
+    elif [[ -f "$0.runfiles/MANIFEST" ]]; then
+        export RUNFILES_MANIFEST_FILE="$0.runfiles/MANIFEST"
+    elif [[ -f "$0.runfiles/bazel_tools/tools/bash/runfiles/runfiles.bash" ]]; then
+        export RUNFILES_DIR="$0.runfiles"
+    fi
+fi
+if [[ -f "${RUNFILES_DIR:-/dev/null}/bazel_tools/tools/bash/runfiles/runfiles.bash" ]]; then
+    source "${RUNFILES_DIR}/bazel_tools/tools/bash/runfiles/runfiles.bash"
+elif [[ -f "${RUNFILES_MANIFEST_FILE:-/dev/null}" ]]; then
+    source "$(grep -m1 "^bazel_tools/tools/bash/runfiles/runfiles.bash " \
+                  "$RUNFILES_MANIFEST_FILE" | cut -d ' ' -f 2-)"
+else
+    echo >&2 "ERROR: cannot find @bazel_tools//tools/bash/runfiles:runfiles.bash"
+    exit 1
+fi
+# --- end runfiles.bash initialization ---
+
+%%env_vars%%
+
+# erl needs HOME to be set
+if [[ -z ${HOME+x} ]]; then
+    export HOME="."
+fi
+
+# The paths we give to erlang have to be absolute so they work no matter where we `cd`.  
+ABS_LOADPATH=""
+for rel_load_path in %%loadpath%%; do
+    # Sometimes (in tests) Bazel gives us absolute paths here
+    if [[ ${rel_load_path:0:1} == "/" ]] ; then
+	ABS_LOADPATH="$ABS_LOADPATH $rel_load_path"
+    else
+	ABS_LOADPATH="$ABS_LOADPATH $PWD/$rel_load_path"
+    fi
+done
+
+exec %%erl%% -pa $ABS_LOADPATH -elixir ansi_enabled true -noshell  %%erl_startup%%  -extra %%elixir_args%% --  "${@:1}"

@@ -1,0 +1,21 @@
+load("//impl:elixir_rules.bzl", "elixir_script")
+
+exports_files(["elixir_script.template"])
+
+genrule(
+    name = "elixir_runfiles.bash",
+    srcs = ["elixir_script.template"],
+    outs = ["elixir_runfiles_script.bash"],
+    cmd = "sed -e s/%%args%%//g $(SRCS) > $@",
+    visibility = ["//visibility:public"],
+)
+
+elixir_script(
+    name = "mix",
+    eval = [
+        'File.cd!(System.get_env("BUILD_WORKING_DIRECTORY"))',
+        "Mix.start()",
+        "Mix.CLI.main()",
+    ],
+    visibility = ["//visibility:public"],
+)

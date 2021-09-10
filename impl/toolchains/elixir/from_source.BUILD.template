@@ -1,0 +1,21 @@
+load("@rules_elixir//impl/toolchains/elixir:build_elixir.bzl", "build_elixir")
+
+build_elixir(
+    name = "%%name%%",
+    inputs = glob(["**"]),
+    any_file_at_root = "Makefile",
+)
+
+toolchain(
+    name = "toolchain",
+    exec_compatible_with = [
+        # Elixir is just beams, we can be executed on any platform...
+    ],
+    target_compatible_with = [
+        # but you have to specify that you want to build binaries with this elixir version 
+        "@rules_elixir//impl/toolchains/elixir:%%version%%",
+    ],
+    toolchain = "%%name%%",
+    toolchain_type = "@rules_elixir//impl/toolchains/elixir:toolchain_type",
+    visibility = ["//visibility:public"]
+)

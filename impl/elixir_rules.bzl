@@ -1,178 +1,268 @@
+# Primitive elixir rules which operate at the file level and don't know anything
+# about projects or external dependencies or configuration or anything like that
+
 load(":common.bzl", "ElixirLibrary", "elixir_common_attrs")
 
-# invoke the elixir compiler on `srcs`, producing a single ebin dir `out`
-def elixir_compile(ctx, srcs, out, loadpath = []):
-    args = ctx.actions.args()
-    args.add("elixirc")
-    args.add_all(loadpath, expand_directories=False, before_each = "-pa")
-    args.add("-o", out.path)
-    args.add_all(srcs)
+def _path(f):
+    return f.path
 
-    ctx.actions.run(
-        executable = ctx.executable._elixir_tool,
-        outputs = [out],
-        inputs = depset(direct = srcs, transitive = [loadpath]),
-        progress_message = "elixir_compile {}".format(", ".join([s.basename for s in srcs])),
-        arguments = [args],
-        #use_default_shell_env = True,
-        env = {
-            "HOME": "."
-        }
+def _ebin_dir(f, mapper = _path):
+    path = mapper(f)
 
+    # .ez archives must be named e.g. `hex-0.20.1.ez` and must include e.g. `hex-0.20.1` as a top directory
+    if f.extension == "ez":
+        path = path + "/" + f.basename[0:-3]
+    return path + "/ebin"
 
-    )
-
-_elixir_library_attrs = {
-    "srcs": attr.label_list(
-        allow_files = [".ex"],
-        doc = "Source files",
-    ),
-    "compile_deps": attr.label_list(),
-    "exported_deps": attr.label_list(
-        default = [],
-        doc = """
-        Re-exported deps of this library.  
-        Dependents of this library will have access to the library itself and its exported_deps.
-        This is useful for e.g. the runtime deps of a macro, which need to exist at compile-time
-        for everyone who calls the macro.
-        """
-    ),
-    "runtime_deps": attr.label_list(),
-}
+# Suitable for use with Args.map_each which expects you to return a list
+def _loadpath_arg(lib_dir):
+    return ["--loadpath", _ebin_dir(lib_dir)]
 
 def _elixir_library_impl(ctx):
-    ebin_dir = ctx.actions.declare_directory(ctx.label.name + "_ebin")
-    extra_sources = [
-        extra
-        for dep in ctx.attr.compile_deps
-        if hasattr(dep[ElixirLibrary], "extra_sources")
-        for extra in dep[ElixirLibrary].extra_sources
-    ]
+    out = ctx.actions.declare_directory("lib/" + ctx.label.name)
+    compile_deps_lib_dirs = depset(transitive = [dep[ElixirLibrary].lib_dirs for dep in ctx.attr.compile_deps])
 
-    elixir_compile(
-        ctx,
-        srcs = extra_sources + ctx.files.srcs,
-        loadpath = depset(transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.compile_deps]),
-        out = ebin_dir,
-    )
+    args = ctx.actions.args()
+    args.add_all(compile_deps_lib_dirs, expand_directories = False, map_each = _loadpath_arg)
+    args.add("--output-base-dir", _ebin_dir(out))
+    args.add_all(ctx.files.srcs)
 
-    transitive_loadpath = depset(
-        direct = [ebin_dir],
-        transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.exported_deps],
+    ctx.actions.run(
+        executable = ctx.executable._elixir_prim_compiler,
+        outputs = [out],
+        inputs = depset(
+            direct = [],
+            transitive = [depset(ctx.files.srcs), compile_deps_lib_dirs],
+        ),
+        progress_message = "elixir_compile {}".format(", ".join([s.basename for s in ctx.files.srcs])),
+        arguments = [args],
+        tools = [ctx.executable._elixir_prim_compiler],
     )
 
     return [
         DefaultInfo(
-            files = depset([ebin_dir]),
+            files = depset([out]),
         ),
         ElixirLibrary(
-            loadpath = transitive_loadpath,
-            runtime_deps = depset(
-                direct = ctx.attr.runtime_deps,
-                transitive = [dep[ElixirLibrary].runtime_deps for dep in ctx.attr.runtime_deps],
+            lib_dirs = depset(
+                direct = [out],
+                transitive = [compile_deps_lib_dirs],
             ),
-        )
+        ),
     ]
 
 elixir_library = rule(
     _elixir_library_impl,
-    attrs = dict(elixir_common_attrs.items() + _elixir_library_attrs.items()),
+    attrs = dict(elixir_common_attrs.items() + {
+        "srcs": attr.label_list(
+            allow_files = [".ex"],
+            doc = "Source files",
+        ),
+        "compile_deps": attr.label_list(
+            default = [],
+            providers = [ElixirLibrary],
+            doc = "Libraries that must be on the loadpath to compile this library",
+        ),
+        "_elixir_prim_compiler": attr.label(
+            default = Label("@rules_elixir//impl/tools:elixir_prim_compiler"),
+            allow_single_file = True,
+            executable = True,
+            cfg = "target",
+        ),
+    }.items()),
+    toolchains = [
+        "@rules_elixir//impl/toolchains/otp:toolchain_type",
+        "@rules_elixir//impl/toolchains/elixir:toolchain_type",
+    ],
     doc = "Builds a directory containing .beam files for all modules in the source file(s)",
+)
+
+def _elixir_prebuilt_library_impl(ctx):
+    libs = depset(ctx.files.lib_dirs)
+    return [
+        DefaultInfo(
+            files = libs,
+        ),
+        ElixirLibrary(
+            lib_dirs = libs,
+        ),
+    ]
+
+elixir_prebuilt_library = rule(
+    _elixir_prebuilt_library_impl,
+    attrs = {
+        "lib_dirs": attr.label_list(allow_files = True),
+    },
 )
 
 _elixir_script_attrs = {
     "srcs": attr.label_list(
         allow_files = [".ex", ".exs"],
-        doc = "Source files",
+        doc = "Script source files to interpret",
+    ),
+    "eval": attr.string_list(
+        default = [],
+        doc = "Expressions to evaluate with the -e option",
     ),
     # since scripts don't have a separate compilation step, they just have `deps`,
     # unlike elixir_libraries, which must specify compile and runtime deps separately
-    "deps": attr.label_list(),
-    "env": attr.string_dict(),
+    "deps": attr.label_list(allow_files = True),
+    "data": attr.label_list(
+        allow_files = True,
+        doc = "Additional files needed by the script -- these will be added to the script's runfiles",
+    ),
+    "env": attr.string_dict(
+        default = {},
+        doc = "Environment variables to set before running the script",
+    ),
+    "elixir_args": attr.string_list(
+        default = [],
+        doc = "Additional arguments to be passed to elixir itself",
+    ),
+    "erl_startup": attr.string(
+        default = "-s elixir start_cli",
+        doc = "Arguments for telling `erl` to start Elixir (or IEx).",
+    ),
     "_script_template": attr.label(
         allow_single_file = True,
-        default = Label("//impl:elixir_script.template"),
+        default = Label("//:elixir_script.template"),
+    ),
+    "_runfiles_lib": attr.label(
+        default = Label("@bazel_tools//tools/bash/runfiles"),
     ),
 }
 
-# helper to find paths to our runfiles, might need to get smarter to work cross-platform... 
-def _rlocation(ctx, runfile):
-    # NOTE: Windows runfiles manifest file includes workspace name...
-    # but if we have real symlinks they don't have workspace name... 
-    #return "$(rlocation {}/{})".format(ctx.workspace_name, runfile.short_path)
-    return runfile.short_path
+# Massage the paths that Bazel gives us so that we can build shell scripts that can find their runfiles
+def _rlocation(ctx, f):
+    s = f.short_path
+    if s[0] == "/":
+        # Already an absolute path
+        return s
+    if s[0:3] == "../":
+        # Reference to external workspace, rlocation prefers the absolute path
+        return "$(rlocation {})".format(s[3:])
+
+    wsname = f.owner.workspace_name
+    if wsname == "":
+        # Implicit, but helpful to rlocation
+        wsname = ctx.workspace_name
+    return "$(rlocation {}/{})".format(wsname, s)
+
+def loadpath_element(ctx, f):
+    # .ez archives must be named e.g. `hex-0.20.1.ez` and must include e.g. `hex-0.20.1` as a top directory
+    path = _rlocation(ctx, f)
+    if f.extension == "ez":
+        path = path + "/" + f.basename[0:-3]
+    return path + "/ebin"
 
 def _elixir_script_impl(ctx):
-    # collect all transitive loadpaths into runfiles, since we need them at runtime 
-    lib_runfiles = ctx.runfiles(
+    elixir_toolchain = ctx.toolchains["@rules_elixir//impl/toolchains/elixir:toolchain_type"].elixirinfo
+    erlang_toolchain = ctx.toolchains["@rules_elixir//impl/toolchains/otp:toolchain_type"].otpinfo
+    lib_dirs = depset(
+        transitive = [
+            elixir_toolchain.lib_dirs,
+            depset(transitive = [dep[ElixirLibrary].lib_dirs for dep in ctx.attr.deps if ElixirLibrary in dep]),
+        ],
+    )
+
+    script_runfiles = ctx.runfiles(
+        # Our source files
+        files = ctx.files.srcs,
         transitive_files = depset(
-            transitive = [dep[ElixirLibrary].loadpath for dep in ctx.attr.deps]
+            transitive = [
+                # erlang/OTP itself
+                erlang_toolchain.files,
+                # The lib dirs for all the ElixirLibrary targets that we depend on (including elixir itself)
+                lib_dirs,
+                # Any files passed through the `data` parameter.
+                depset(transitive = [dep[DefaultInfo].files for dep in ctx.attr.data]),
+                # The runfiles of our dependencies.
+                depset(transitive = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.deps]),
+                # The runfiles library itself.
+                ctx.attr._runfiles_lib[DefaultInfo].default_runfiles.files,
+            ],
         ),
     )
-    src_runfiles = ctx.runfiles(files = ctx.files.srcs)
+    arg_groups = [
+        ["-r {}".format(_rlocation(ctx, f)) for f in ctx.files.srcs],
+        ["-e '{}'".format(expr) for expr in ctx.attr.eval],
+        [ctx.expand_location(a) for a in ctx.attr.elixir_args],
+    ]
 
-    script_body = ctx.actions.declare_file("body")
+    exe = ctx.actions.declare_file("{}_runner.bash".format(ctx.label.name))
+
     ctx.actions.expand_template(
         template = ctx.file._script_template,
-        output = script_body,
+        output = exe,
         substitutions = {
-            "{elixir_tool}": ctx.executable._elixir_tool.short_path,
-            "{loadpath}":    " ".join(["-pa {}".format(_rlocation(ctx, f)) for f in lib_runfiles.files.to_list()]),
-            "{srcs}":        " ".join(["-r {}".format(_rlocation(ctx, f)) for f in src_runfiles.files.to_list()]),
+            "%%loadpath%%": " ".join([loadpath_element(ctx, f) for f in lib_dirs.to_list()]),
+            "%%erl%%": _rlocation(ctx, erlang_toolchain.erl),
+            "%%erl_startup%%": ctx.attr.erl_startup,
+            "%%elixir_args%%": " ".join([arg for g in arg_groups for arg in g]),
+            "%%env_vars%%": "\n".join([
+                "export {}={}".format(var, val)
+                for (var, val) in ctx.attr.env.items() + [("LC_ALL", ctx.attr._elixir_locale)]
+            ]),
         },
         is_executable = True,
     )
 
-    # do a bunch of nasty hacks to set up the environment
-    env_file = ctx.actions.declare_file("env")
-    extra_env_Str = "\n".join(["export {}={}".format(var, val) for (var, val) in ctx.attr.env.items()])
-    print(extra_env_Str)
-    ctx.actions.run_shell(
-        outputs = [env_file, ctx.outputs.executable],
-        inputs = [script_body],
-        command = """
-        env | awk '{{print "export " $0}}' > {env_file}
-        cat >>{env_file} <<EOF
-{extra_env}
-EOF
-        cat {env_file} {script_file} > {out_exe}
-        """.format(
-            env_file = env_file.path,
-            script_file = script_body.path,
-            out_exe = ctx.outputs.executable.path,
-            extra_env = extra_env_Str
-        ),
-        #use_default_shell_env = True,
-    )
     return [
-        DefaultInfo(runfiles = src_runfiles.merge(lib_runfiles))
+        DefaultInfo(
+            executable = exe,
+            runfiles = script_runfiles,
+        ),
+        ElixirLibrary(
+            lib_dirs = lib_dirs,
+        ),
     ]
 
-
-elixir_script_runner = rule(
+elixir_script = rule(
     _elixir_script_impl,
     attrs = dict(elixir_common_attrs.items() + _elixir_script_attrs.items()),
     executable = True,
-    doc = "Elixir script, intended for use with `bazel run` -- does not work outside bazel context"
+    toolchains = [
+        "@rules_elixir//impl/toolchains/otp:toolchain_type",
+        "@rules_elixir//impl/toolchains/elixir:toolchain_type",
+    ],
+    doc = "Elixir script, intended for use with `bazel run` -- does not work outside bazel context",
 )
 
-def elixir_script(name = None, **kwargs):
-    runner = name + "_runner"
-    elixir_script_runner(name = runner, **kwargs)
-    native.sh_binary(
+elixir_script_test = rule(
+    _elixir_script_impl,
+    attrs = dict(elixir_common_attrs.items() + _elixir_script_attrs.items()),
+    test = True,
+    toolchains = [
+        "@rules_elixir//impl/toolchains/otp:toolchain_type",
+        "@rules_elixir//impl/toolchains/elixir:toolchain_type",
+    ],
+    doc = "Elixir test; exactly the same as elixir_script but tagged as a test",
+)
+
+def elixir_iex(name = None, elixir_args = [], erl_flags = "", **kwargs):
+    elixir_script(
         name = name,
-        deps = ["@bazel_tools//tools/bash/runfiles", "@elixir//:elixir_tool_lib"],
-        srcs = [runner],
-        visibility = ["//visibility:public"],
-        data =  ["@elixir//:elixir_tool"],
+        erl_startup = "-user Elixir.IEx.CLI " + erl_flags,
+        elixir_args = ["--no-halt"] + elixir_args,
+        **kwargs
     )
 
-def elixir_test(name = None, **kwargs):
-    runner = name + "_test_runner"
-    elixir_script_runner(name = runner, **kwargs)
-    native.sh_test(
+def elixir_cli_tool(name = None, srcs = [], deps = [], main = None):
+    script_deps = []
+    gen_lib = name + "__script_compile"
+    elixir_library(
+        name = gen_lib,
+        srcs = srcs,
+        compile_deps = deps,
+    )
+
+    entrypoint = None
+    if main:
+        entrypoint = ["{}.main(System.argv)".format(main)]
+
+    elixir_script(
         name = name,
-        deps = ["@bazel_tools//tools/bash/runfiles", "@elixir//:elixir_tool_lib"],
-        srcs = [runner],
-        data = kwargs["srcs"] + ["@elixir//:elixir_tool"],
+        eval = entrypoint,
+        deps = [gen_lib],
+        visibility = ["//visibility:public"],
     )

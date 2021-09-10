@@ -1,0 +1,7 @@
+# The config_setting is like a predicate we can use to test if elixir 1.9 is used.
+config_setting(
+    name = "is_elixir19",
+    constraint_values = [
+        "@rules_elixir//impl/toolchains/elixir:1.9.4",
+    ],
+)

@@ -1,0 +1,19 @@
+load("@rules_elixir//impl/toolchains/otp:erlang_toolchain.bzl", "erlang_toolchain")
+
+erlang_toolchain(
+    name = "%%name%%",
+    erts_version = "%%erts_version%%",
+    lib_dir = glob(["lib/**"]),
+    erts_dir = glob(["erts-%%erts_version%%/**"]),
+    bin_dir = glob(["bin/**"]),
+    erl = "bin/erl",
+)
+
+toolchain(
+    name = "toolchain",
+    exec_compatible_with = %%compatible_with%%,
+    target_compatible_with = %%compatible_with%%,
+    toolchain = "%%name%%",
+    toolchain_type = "@rules_elixir//impl/toolchains/otp:toolchain_type",
+    visibility = ["//visibility:public"]
+)

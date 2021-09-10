@@ -1,0 +1,112 @@
+load("//impl:elixir_rules.bzl", "elixir_cli_tool", "elixir_iex", "elixir_library", "elixir_prebuilt_library", "elixir_script")
+load("//impl:elixir_escript.bzl", "elixir_escript")
+
+elixir_script(
+    name = "elixir_prim_compiler",
+    srcs = [
+        "beam_stripper.ex",
+        "elixir_prim_compiler.exs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+elixir_prebuilt_library(
+    name = "hex",
+    lib_dirs = ["@hex//file"],
+    visibility = ["//visibility:public"],
+)
+
+elixir_library(
+    name = "beam_stripper",
+    srcs = ["beam_stripper.ex"],
+    visibility = ["//visibility:public"],
+)
+
+elixir_cli_tool(
+    name = "dep_builder",
+    srcs = [
+        "archiver.ex",
+        "cached_deps.ex",
+        "dep_builder.ex",
+        "symlink_tree.ex",
+    ],
+    main = "RulesElixir.Tools.DepBuilder",
+    deps = [
+        ":beam_stripper",
+        ":hex",
+    ],
+)
+
+elixir_library(
+    name = "autodeps_lib",
+    srcs = ["cached_deps.ex"] + glob(["autodeps/*.ex"]),
+    compile_deps = [":hex"],
+)
+
+elixir_cli_tool(
+    name = "repos_from_lock",
+    main = "RulesElixir.Tools.Autodeps.ReposFromLock",
+    deps = [":autodeps_lib"],
+)
+
+elixir_cli_tool(
+    name = "mix_reader",
+    srcs = ["symlink_tree.ex"],
+    main = "RulesElixir.Tools.Autodeps.MixReader",
+    deps = [":autodeps_lib"],
+)
+
+elixir_cli_tool(
+    name = "cached_deps",
+    srcs = [
+        "cached_deps.ex",
+        "symlink_tree.ex",
+    ],
+    main = "RulesElixir.Tools.CachedDeps",
+    deps = [":hex"],
+)
+
+elixir_cli_tool(
+    name = "subtree_copier",
+    srcs = [
+        "archiver.ex",
+        "subtree_copier.ex",
+        "symlink_tree.ex",
+    ],
+    main = "RulesElixir.Tools.SubtreeCopier",
+)
+
+elixir_cli_tool(
+    name = "escript_builder",
+    srcs = ["escript_builder.ex"],
+    main = "RulesElixir.Tools.EscriptBuilder",
+)
+
+elixir_iex(
+    name = "autodeps_iex_18",
+    erl_flags = "-sname autodeps",
+    exec_compatible_with = ["@rules_elixir//impl/toolchains/elixir:1.8.1"],
+    deps = [":autodeps"],
+)
+
+elixir_iex(
+    name = "autodeps_iex",
+    erl_flags = "-sname autodeps",
+    deps = [":autodeps"],
+)
+
+elixir_iex(
+    name = "autodeps_iex_19",
+    erl_flags = "-sname autodeps",
+    exec_compatible_with = ["@rules_elixir//impl/toolchains/elixir:1.9.4"],
+    deps = [":autodeps"],
+)
+
+exports_files([
+    "bazel_test_helper.exs",
+    "mix_task_runner.exs.template",
+    "load_env_file.exs",
+    "elixir_prim_compiler.exs",
+    "copy_elixir_itself.ex",
+    "beam_stripper.ex",
+])

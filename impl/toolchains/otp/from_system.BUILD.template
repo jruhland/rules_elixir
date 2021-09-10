@@ -1,0 +1,20 @@
+load("@rules_elixir//impl/toolchains/otp:find_otp.bzl", "find_otp")
+
+find_otp(
+    name = "find_otp",
+    erl_path = "%%which_erl%%",
+    erl_dir = "%%dirname%%",
+    erts_version = "%%erts_version%%",
+    erts_c_headers = "%%erts_headers%%"
+)
+
+toolchain(
+    name = "host_erlang_toolchain",
+    toolchain = "find_otp",
+    toolchain_type = "@rules_elixir//impl/toolchains/otp:toolchain_type",
+    target_compatible_with = [
+        "@rules_elixir//impl/toolchains/otp:%%otp_version%%",
+    ],
+    visibility = ["//visibility:public"]
+)
+

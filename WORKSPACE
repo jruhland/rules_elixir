@@ -1,7 +1,5 @@
 workspace(name = "rules_elixir")
 
-load("@rules_elixir//:deps.bzl", "elixir_rules_dependencies")
+load(":deps.bzl", "rules_elixir_dependencies")
 
-elixir_rules_dependencies()
-
-
+rules_elixir_dependencies()

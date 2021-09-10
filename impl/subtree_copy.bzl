@@ -1,7 +1,7 @@
 # Creates the directory structure that Mix expects so that it can start and run properly
 # using our compiled code
 
-load("@rules_elixir//impl:providers.bzl", "MixBuild", "MixLock", "MixProject")
+load("//impl:providers.bzl", "MixBuild", "MixLock", "MixProject")
 load(":mix_lock.bzl", "add_mix_deps_to_args")
 
 def _source_files_copy_impl(ctx):

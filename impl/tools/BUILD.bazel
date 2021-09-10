@@ -1,5 +1,4 @@
 load("//impl:elixir_rules.bzl", "elixir_cli_tool", "elixir_iex", "elixir_library", "elixir_prebuilt_library", "elixir_script")
-load("//impl:elixir_escript.bzl", "elixir_escript")
 
 elixir_script(
     name = "elixir_prim_compiler",

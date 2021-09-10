@@ -1,5 +1,4 @@
-load("@rules_elixir//impl:mix_rules.bzl", "mix_config_group")
-load("@rules_elixir//impl:elixir_rules.bzl", "elixir_iex", "elixir_script_test")
+load("//impl:elixir_rules.bzl", "elixir_iex", "elixir_script_test")
 
 def _expand_template_impl(ctx):
     template_file = ctx.file.template_file

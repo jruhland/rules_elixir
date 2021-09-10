@@ -1,4 +1,4 @@
-load("@rules_elixir//impl:providers.bzl", "MixLock", "MixProject")
+load("//impl:providers.bzl", "MixLock", "MixProject")
 
 def _mix_lock_impl(ctx):
     return [

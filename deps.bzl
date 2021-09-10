@@ -1,9 +1,8 @@
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
-load("@rules_elixir//impl/toolchains/otp:prebuilt.bzl", "prebuilt_otp_release")
-load("@rules_elixir//impl/toolchains/elixir:from_source.bzl", "elixir_source_archive")
-load("@rules_elixir//impl/toolchains/elixir:from_system.bzl", "elixir_from_system_path")
-load("@rules_elixir//impl/toolchains/otp:from_system.bzl", "erlang_from_system_path")
-load("@rules_elixir//impl:mix_deps_rules.bzl", "mix_git_repository")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+load("//impl/toolchains/otp:prebuilt.bzl", "prebuilt_otp_release")
+load("//impl/toolchains/elixir:from_source.bzl", "elixir_source_archive")
+load("//impl/toolchains/elixir:from_system.bzl", "elixir_from_system_path")
+load("//impl/toolchains/otp:from_system.bzl", "erlang_from_system_path")
 
 def define_toolchains():
     elixir_source_archive(
